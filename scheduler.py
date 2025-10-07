@@ -16,40 +16,62 @@ def load_excel(file_path):
         weighted_df = xl.parse("Weighted Inputs", index_col=0).T
         employees = weighted_df.columns.tolist()
         
+        # Normalize index to handle case or whitespace issues
+        weighted_df.index = weighted_df.index.str.strip().str.lower()
+        
         # Shift preferences
         shift_prefs = {}
+        shift_row = "shift weight"  # Normalized to lowercase
+        if shift_row not in weighted_df.index:
+            raise ValueError("Cannot find 'Shift Weight' row in Weighted Inputs sheet")
+        
         for emp in employees:
-            shift = weighted_df.loc["Shift Weight", emp]
+            shift = weighted_df.loc[shift_row, emp]
             if pd.isna(shift):
                 shift_prefs[emp] = {"Morning": 0, "Evening": 0}
             else:
-                shift_prefs[emp] = {
-                    "Morning": 10 if shift == "Morning" else 0,
-                    "Evening": 10 if shift == "Evening" else 0
-                }
+                shift = str(shift).strip().lower()
+                if shift not in ["morning", "evening"]:
+                    print(f"Warning: Invalid shift '{shift}' for {emp}, assuming no preference")
+                    shift_prefs[emp] = {"Morning": 0, "Evening": 0}
+                else:
+                    shift_prefs[emp] = {
+                        "Morning": 10 if shift == "morning" else 0,
+                        "Evening": 10 if shift == "evening" else 0
+                    }
         
         # Day preferences
         days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
         day_prefs = {}
+        day_row = "day weights"  # Normalized
+        if day_row not in weighted_df.index:
+            raise ValueError("Cannot find 'Day Weights' row in Weighted Inputs sheet")
+        
         for emp in employees:
-            day_str = weighted_df.loc["Day Weights", emp]
+            day_str = weighted_df.loc[day_row, emp]
             preferred_days = day_str.split(", ") if pd.notna(day_str) else []
+            preferred_days = [d.strip() for d in preferred_days]
             day_prefs[emp] = {day: 10 if day in preferred_days else 0 for day in days}
         
         # Must-have-off
         must_off = {}
-        for emp in employees:
-            off_date = weighted_df.loc["Must have off", emp]
-            if pd.notna(off_date):
-                try:
-                    off_date = pd.to_datetime(off_date)
-                    day_name = off_date.strftime("%a")
-                    must_off[emp] = [day_name]
-                except:
-                    print(f"Warning: Invalid date format for {emp}'s must-have-off")
+        off_row = "must have off"  # Normalized
+        if off_row not in weighted_df.index:
+            print("Warning: Cannot find 'Must have off' row, assuming none")
+        else:
+            for emp in employees:
+                off_date = weighted_df.loc[off_row, emp]
+                if pd.notna(off_date):
+                    try:
+                        off_date = pd.to_datetime(off_date)
+                        day_name = off_date.strftime("%a")
+                        must_off[emp] = [day_name]
+                    except:
+                        print(f"Warning: Invalid date format for {emp}'s must-have-off")
         
         # Parse Hard Requirements
         req_df = xl.parse("Hard Requirements", index_col=0)
+        req_df.index = req_df.index.str.strip()
         areas = ["Bar", "Kitchen"]
         required = {}
         for day in days:
@@ -63,9 +85,15 @@ def load_excel(file_path):
         
         # Parse Work Area assignments
         work_areas = {}
-        for emp in employees:
-            area = req_df.loc["Employee/Work Area", emp]
-            work_areas[emp] = [area] if pd.notna(area) else areas
+        area_row = "Employee/Work Area"
+        if area_row not in req_df.index:
+            print("Warning: Cannot find 'Employee/Work Area' row, assuming all can work all areas")
+            for emp in employees:
+                work_areas[emp] = areas
+        else:
+            for emp in employees:
+                area = req_df.loc[area_row, emp]
+                work_areas[emp] = [area] if pd.notna(area) and area in areas else areas
         
         return employees, days, ["Morning", "Evening"], areas, shift_prefs, day_prefs, must_off, required, work_areas
     except Exception as e:
@@ -77,7 +105,7 @@ def solve_schedule(employees, days, shifts, areas, shift_prefs, day_prefs, must_
                   relax_shift=True, relax_day=True, relax_weekend=True, relax_one_shift=True):
     prob = pulp.LpProblem("Restaurant_Schedule", pulp.LpMaximize)
     
-    # Decision variables (only for allowed work areas)
+    # Decision variables
     x = {}
     for e in employees:
         x[e] = {}
