@@ -1,0 +1,5 @@
+{
+    "emp_file": "C:/Users/chris/BusinessScheduleGen/Employee_Data.csv",
+    "req_file": "C:/Users/chris/BusinessScheduleGen/Personel_Required.csv",
+    "limits_file": "C:/Users/chris/BusinessScheduleGen/Hard_Limits.csv"
+}
