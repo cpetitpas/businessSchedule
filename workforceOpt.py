@@ -38,7 +38,7 @@ def save_config():
         print(f"Warning: Failed to save config.json ({str(e)})")
 
 # Function to calculate minimum employees needed
-def calculate_min_employees(required, work_areas, employees, must_off, max_shifts_per_week, max_weekend_shifts, start_date):
+def calculate_min_employees(required, work_areas, employees, must_off, max_shifts_per_week, max_weekend_shifts, start_date, num_weeks):
     areas = ["Bar", "Kitchen"]
     days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
     
@@ -55,19 +55,24 @@ def calculate_min_employees(required, work_areas, employees, must_off, max_shift
     for day in days:
         for area in areas:
             for shift in ["Morning", "Evening"]:
-                total_shifts[area] += required[day][area][shift]
+                total_shifts[area] += required[day][area][shift] * num_weeks
     
-    # Weekend shifts (Fri-Sun in Week 1-2, Fri-Sat in Week 2)
+    # Weekend shifts
     weekend_shifts = {"Bar": 0, "Kitchen": 0}
-    weekend_days = [(0, "Fri"), (0, "Sat"), (1, "Sun"), (1, "Fri"), (1, "Sat")]
-    for w, d in weekend_days:
-        for area in areas:
-            for shift in ["Morning", "Evening"]:
-                weekend_shifts[area] += required[d][area][shift]
+    for week in range(num_weeks):
+        if week < num_weeks - 1 or num_weeks == 1:
+            for day in ["Fri", "Sat", "Sun"]:
+                for area in areas:
+                    for shift in ["Morning", "Evening"]:
+                        weekend_shifts[area] += required[day][area][shift]
+        else:
+            for day in ["Fri", "Sat"]:
+                for area in areas:
+                    for shift in ["Morning", "Evening"]:
+                        weekend_shifts[area] += required[day][area][shift]
     
-    # Max shifts per employee (average of max_shifts_per_week)
+    # Max shifts per employee
     avg_max_shifts = sum(max_shifts_per_week.values()) / len(max_shifts_per_week) if max_shifts_per_week else 3.067
-    total_weeks = 2
     
     # Adjust for must-have-off within the schedule period
     unavailable_shifts = {"Bar": 0, "Kitchen": 0}
@@ -76,24 +81,20 @@ def calculate_min_employees(required, work_areas, employees, must_off, max_shift
             try:
                 off_date = datetime.strptime(date_str, "%Y-%m-%d")
                 delta = (off_date - start_date).days
-                if 0 <= delta < 14:  # Within two-week period
+                if 0 <= delta < 7 * num_weeks:
                     for area in work_areas[emp]:
-                        unavailable_shifts[area] += 1  # One shift unavailable
+                        unavailable_shifts[area] += 1
             except:
                 continue
     
     # Minimum employees needed
     needed = {"Bar": 0, "Kitchen": 0}
     for area in areas:
-        # Total shifts ÷ max shifts per employee
         shifts_needed = total_shifts[area] + unavailable_shifts[area]
-        employees_by_total = math.ceil(shifts_needed / (avg_max_shifts * total_weeks))
-        # Weekend shifts ÷ max weekend shifts per employee (1 per period, 2 periods)
-        employees_by_weekend = math.ceil(weekend_shifts[area] / (max_weekend_shifts * 2))
-        # Take maximum
+        employees_by_total = math.ceil(shifts_needed / (avg_max_shifts * num_weeks))
+        employees_by_weekend = math.ceil(weekend_shifts[area] / (max_weekend_shifts * num_weeks))
         needed[area] = max(employees_by_total, employees_by_weekend)
-        # Adjust Bar to 6 based on user observation
-        if area == "Bar":
+        if area == "Bar" and num_weeks == 2:
             needed[area] = max(needed[area], 6)
     
     return current, needed
@@ -101,7 +102,6 @@ def calculate_min_employees(required, work_areas, employees, must_off, max_shift
 # Function to parse CSV files
 def load_csv(emp_file, req_file, limits_file, start_date):
     try:
-        # Parse Employee Data
         emp_df = pd.read_csv(emp_file, index_col=0)
         emp_df.index = emp_df.index.astype(str).str.strip().str.lower()
         if emp_df.index.isna().any() or "" in emp_df.index:
@@ -110,7 +110,6 @@ def load_csv(emp_file, req_file, limits_file, start_date):
         if not employees:
             raise ValueError("No valid employee columns found in Employee_Data.csv")
         
-        # Work areas
         work_areas = {}
         area_row = "work area"
         if area_row not in emp_df.index:
@@ -119,11 +118,10 @@ def load_csv(emp_file, req_file, limits_file, start_date):
         for emp in employees:
             area = emp_df.loc[area_row, emp]
             if pd.notna(area) and area in areas:
-                work_areas[emp] = [area]  # Single area per employee
+                work_areas[emp] = [area]
             else:
                 raise ValueError(f"Invalid work area for {emp}: {area}")
         
-        # Shift preferences
         shift_prefs = {}
         shift_row = "shift weight"
         if shift_row not in emp_df.index:
@@ -143,7 +141,6 @@ def load_csv(emp_file, req_file, limits_file, start_date):
                         "Evening": 10 if shift == "evening" else 0
                     }
         
-        # Day preferences
         days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
         day_prefs = {}
         day_row = "day weights"
@@ -163,27 +160,28 @@ def load_csv(emp_file, req_file, limits_file, start_date):
                     print(f"Warning: Failed to parse day preferences for {emp}, assuming none")
             day_prefs[emp] = {day: 10 if day in preferred_days else 0 for day in days}
         
-        # Must-have-off (relative to start_date)
         must_off = {}
         off_row = "must have off"
         if off_row not in emp_df.index:
             print("Warning: Cannot find 'Must have off' row, assuming none")
         else:
             for emp in employees:
-                off_date = emp_df.loc[off_row, emp]
-                if pd.notna(off_date):
-                    try:
-                        off_date = pd.to_datetime(off_date)
-                        delta = (off_date - start_date).days
-                        if 0 <= delta < 14:  # Within two-week period
-                            day_name = days[delta % 7]
-                            must_off[emp] = [(day_name, off_date.strftime("%Y-%m-%d"))]
-                        else:
-                            print(f"Warning: Must-have-off date {off_date.strftime('%Y-%m-%d')} for {emp} outside schedule, ignoring")
-                    except:
-                        print(f"Warning: Invalid date format for {emp}'s must-have-off")
+                off_dates_str = emp_df.loc[off_row, emp]
+                if pd.notna(off_dates_str):
+                    off_dates = [d.strip() for d in str(off_dates_str).split(',')]
+                    must_off[emp] = []
+                    for date_str in off_dates:
+                        try:
+                            off_date = pd.to_datetime(date_str)
+                            delta = (off_date - start_date).days
+                            if 0 <= delta < 7 * num_weeks_var.get():
+                                day_name = off_date.strftime("%a")
+                                must_off[emp].append((day_name, off_date.strftime("%Y-%m-%d")))
+                            else:
+                                print(f"Warning: Must-have-off date {off_date.strftime('%Y-%m-%d')} for {emp} outside schedule, ignoring")
+                        except:
+                            print(f"Warning: Invalid date format '{date_str}' for {emp}'s must-have-off")
         
-        # Min and Max Shifts per Week
         min_shifts = {}
         max_shifts = {}
         min_row = "min shifts per week"
@@ -204,7 +202,6 @@ def load_csv(emp_file, req_file, limits_file, start_date):
                 value = emp_df.loc[max_row, emp]
                 max_shifts[emp] = int(value) if pd.notna(value) else float("inf")
         
-        # Parse Personel Required
         req_df = pd.read_csv(req_file, index_col=0)
         req_df.index = req_df.index.astype(str).str.strip()
         if req_df.index.isna().any() or "" in req_df.index:
@@ -222,12 +219,11 @@ def load_csv(emp_file, req_file, limits_file, start_date):
                 except:
                     raise ValueError(f"Invalid staffing requirement for {area} on {day}")
         
-        # Parse Hard Limits
         limits_df = pd.read_csv(limits_file)
         if limits_df.empty:
             raise ValueError("Hard_Limits.csv is empty")
         constraints = {
-            "max_weekend_days": 1,  # From Hard_Limits.csv
+            "max_weekend_days": 1,
             "max_shifts_per_day": 1,
             "violate_order": ["Day Weights", "Shift Weight", "Max Number of Weekend Days", "Min Shifts per Week"]
         }
@@ -268,14 +264,13 @@ def load_csv(emp_file, req_file, limits_file, start_date):
 
 # Function to solve scheduling problem
 def solve_schedule(employees, days, shifts, areas, shift_prefs, day_prefs, must_off, required, work_areas, constraints, min_shifts, max_shifts,
-                  relax_day=True, relax_shift=True, relax_weekend=True, relax_min_shifts=True):
+                  relax_day=True, relax_shift=True, relax_weekend=True, relax_min_shifts=True, num_weeks=2):
     prob = pulp.LpProblem("Restaurant_Schedule", pulp.LpMaximize)
     
-    # Decision variables
     x = {}
     for e in employees:
         x[e] = {}
-        for w in range(2):  # Two weeks
+        for w in range(num_weeks):
             x[e][w] = {}
             for d in days:
                 x[e][w][d] = {}
@@ -284,7 +279,6 @@ def solve_schedule(employees, days, shifts, areas, shift_prefs, day_prefs, must_
                     for a in work_areas[e]:
                         x[e][w][d][s][a] = pulp.LpVariable(f"assign_{e}_w{w}_{d}_{s}_{a}", cat="Binary")
     
-    # Objective: Maximize preferences, penalize violations
     day_penalty = -10 if relax_day else 0
     shift_penalty = -10 if relax_shift else 0
     min_shifts_penalty = -100 if relax_min_shifts else 0
@@ -293,48 +287,46 @@ def solve_schedule(employees, days, shifts, areas, shift_prefs, day_prefs, must_
             (day_prefs[e][d] if day_prefs[e][d] > 0 else day_penalty) +
             (shift_prefs[e][s] if shift_prefs[e][s] > 0 else shift_penalty)
         )
-        for e in employees for w in range(2) for d in days for s in shifts for a in work_areas[e]
+        for e in employees for w in range(num_weeks) for d in days for s in shifts for a in work_areas[e]
     )
     
-    # Constraints
-    # 1. Staffing requirements (hard)
-    for w in range(2):
+    for w in range(num_weeks):
         for d in days:
             for a in areas:
                 for s in shifts:
                     prob += pulp.lpSum(x[e][w][d][s][a] for e in employees if a in work_areas[e]) == required[d][a][s]
     
-    # 2. Must-have-off (hard)
     for e in must_off:
-        for day_name, date_str in must_off[e]:
-            w = 0 if (datetime.strptime(date_str, "%Y-%m-%d") - start_date).days < 7 else 1
-            for s in shifts:
-                for a in work_areas[e]:
-                    prob += x[e][w][day_name][s][a] == 0
+        for _, date_str in must_off[e]:
+            delta = (datetime.strptime(date_str, "%Y-%m-%d") - start_date).days
+            if 0 <= delta < 7 * num_weeks:
+                w = delta // 7
+                d = days[delta % 7]
+                for s in shifts:
+                    for a in work_areas[e]:
+                        prob += x[e][w][d][s][a] == 0
     
-    # 3. Max shifts per day (hard)
     for e in employees:
-        for w in range(2):
+        for w in range(num_weeks):
             for d in days:
                 prob += pulp.lpSum(x[e][w][d][s][a] for s in shifts for a in work_areas[e]) <= constraints["max_shifts_per_day"]
     
-    # 4. Max shifts per week (hard)
     for e in employees:
-        for w in range(2):
+        for w in range(num_weeks):
             prob += pulp.lpSum(x[e][w][d][s][a] for d in days for s in shifts for a in work_areas[e]) <= max_shifts[e]
     
-    # 5. Min shifts per week (relaxable)
     if relax_min_shifts:
         for e in employees:
-            for w in range(2):
+            for w in range(num_weeks):
                 prob += pulp.lpSum(x[e][w][d][s][a] for d in days for s in shifts for a in work_areas[e]) >= min_shifts[e]
     
-    # 6. Max weekend days (non-relaxable by default, unless specified)
-    schedule_days = [(w, d) for w in range(2) for d in days]
-    fri_sun_windows = [
-        [(0, "Fri"), (0, "Sat"), (1, "Sun")],  # First Fri-Sun
-        [(1, "Fri"), (1, "Sat")],  # Second Fri-Sat
-    ]
+    schedule_days = [(w, d) for w in range(num_weeks) for d in days]
+    fri_sun_windows = []
+    for w in range(num_weeks):
+        if w < num_weeks - 1 or num_weeks == 1:
+            fri_sun_windows.append([(w, "Fri"), (w, "Sat"), (w, "Sun")])
+        else:
+            fri_sun_windows.append([(w, "Fri"), (w, "Sat")])
     for e in employees:
         for window in fri_sun_windows:
             prob += pulp.lpSum(
@@ -344,18 +336,19 @@ def solve_schedule(employees, days, shifts, areas, shift_prefs, day_prefs, must_
                 for a in work_areas[e]
             ) <= constraints["max_weekend_days"]
     
-    # Solve
     prob.solve()
     return prob, x
 
 # Function to validate weekend constraints
-def validate_weekend_constraints(x, employees, days, shifts, work_areas, max_weekend_days, start_date):
+def validate_weekend_constraints(x, employees, days, shifts, work_areas, max_weekend_days, start_date, num_weeks):
     violations = []
-    schedule_days = [(w, d) for w in range(2) for d in days]
-    fri_sun_windows = [
-        [(0, "Fri"), (0, "Sat"), (1, "Sun")],  # First Fri-Sun
-        [(1, "Fri"), (1, "Sat")],  # Second Fri-Sat
-    ]
+    schedule_days = [(w, d) for w in range(num_weeks) for d in days]
+    fri_sun_windows = []
+    for w in range(num_weeks):
+        if w < num_weeks - 1 or num_weeks == 1:
+            fri_sun_windows.append([(w, "Fri"), (w, "Sat"), (w, "Sun")])
+        else:
+            fri_sun_windows.append([(w, "Fri"), (w, "Sat")])
     for e in employees:
         for i, window in enumerate(fri_sun_windows):
             shift_count = sum(
@@ -375,14 +368,15 @@ def validate_weekend_constraints(x, employees, days, shifts, work_areas, max_wee
 
 # Function to generate schedule with relaxation
 def generate_schedule():
-    global start_date  # Make start_date accessible for must-have-off
+    global start_date, num_weeks_var, all_trees
     try:
         start_date = start_date_entry.get_date()
-        if start_date.weekday() != 6:  # Sunday is 6
-            messagebox.showerror("Error", "Start date must be a Sunday")
+        num_weeks = num_weeks_var.get()
+        if not isinstance(num_weeks, int) or num_weeks < 1:
+            messagebox.showerror("Error", "Number of weeks must be an integer >= 1")
             return
     except:
-        messagebox.showerror("Error", "Invalid start date format")
+        messagebox.showerror("Error", "Invalid start date or number of weeks")
         return
     
     emp_file = emp_file_var.get()
@@ -398,7 +392,6 @@ def generate_schedule():
     
     employees, days, shifts, areas, shift_prefs, day_prefs, must_off, required, work_areas, constraints, min_shifts, max_shifts = data
     
-    # Map relaxation order to flags
     relax_map = {
         "Day Weights": "relax_day",
         "Shift Weight": "relax_shift",
@@ -409,89 +402,112 @@ def generate_schedule():
     for i, rule in enumerate(constraints["violate_order"], 1):
         current = list(relax_order[-1][:4])
         if rule in relax_map:
-            current[list(relax_map.keys()).index(rule)] = False
-        relax_order.append((*current, f"Relax {', '.join(constraints['violate_order'][:i])}"))
+            idx = list(relax_map.keys()).index(rule)
+            current[idx] = False
+        relax_order.append(tuple(current) + (f"Relax {', '.join(constraints['violate_order'][:i])}",))
     
     solution = None
     x = None
     relaxed_message = ""
     for relax_day, relax_shift, relax_weekend, relax_min_shifts, msg in relax_order:
         prob, x = solve_schedule(employees, days, shifts, areas, shift_prefs, day_prefs, must_off, required, work_areas,
-                                 constraints, min_shifts, max_shifts, relax_day, relax_shift, relax_weekend, relax_min_shifts)
+                                 constraints, min_shifts, max_shifts, relax_day, relax_shift, relax_weekend, relax_min_shifts, num_weeks)
         if prob.status == pulp.LpStatusOptimal:
             relaxed_message = msg
             solution = prob
             break
     
-    # Clear previous Treeview contents
-    for tree in [bar_tree, kitchen_tree]:
-        for item in tree.get_children():
-            tree.delete(item)
+    # Clear existing schedules
+    for widget in bar_frame.winfo_children():
+        widget.destroy()
+    for widget in kitchen_frame.winfo_children():
+        widget.destroy()
+    all_trees = []
     
     if solution and solution.status == pulp.LpStatusOptimal:
-        # Validate weekend constraints
-        violations = validate_weekend_constraints(x, employees, days, shifts, work_areas, constraints["max_weekend_days"], start_date)
+        violations = validate_weekend_constraints(x, employees, days, shifts, work_areas, constraints["max_weekend_days"], start_date, num_weeks)
         violation_message = "\n".join(violations) if violations else "None"
         messagebox.showinfo("Success", f"Optimal schedule found! ({relaxed_message})\nWeekend constraint violations:\n{violation_message}")
         
-        # Generate two-week dates
-        dates = [(start_date + timedelta(days=i)) for i in range(14)]
-        columns = [f"{days[i % 7]}, {d.strftime('%b %d, %y')}" for i, d in enumerate(dates)]
+        total_days = 7 * num_weeks
+        dates = [(start_date + timedelta(days=i)) for i in range(total_days)]
+        start_weekday = start_date.weekday()
+        day_names = days[start_weekday:] + days[:start_weekday]
+        columns = [f"{day_names[i % 7]}, {d.strftime('%b %d, %y')}" for i, d in enumerate(dates)]
         
-        # Initialize schedules
-        bar_schedule = [
-            ["Day/Shift"] + columns[:7],  # Week 1 header
-            ["Morning"] + [""] * 7,
-            ["Evening"] + [""] * 7,
-            [],  # Blank row
-            ["Day/Shift"] + columns[7:],  # Week 2 header
-            ["Morning"] + [""] * 7,
-            ["Evening"] + [""] * 7
-        ]
-        kitchen_schedule = [
-            ["Day/Shift"] + columns[:7],  # Week 1 header
-            ["Morning"] + [""] * 7,
-            ["Evening"] + [""] * 7,
-            [],  # Blank row
-            ["Day/Shift"] + columns[7:],  # Week 2 header
-            ["Morning"] + [""] * 7,
-            ["Evening"] + [""] * 7
-        ]
-        
-        # Populate schedules
-        for w in range(2):
-            row_offset = w * 4  # Week 1: 0-2, Week 2: 4-6 (skipping blank row at 3)
-            for d, day in enumerate(days):
-                col_idx = d + 1  # Column 0 is Day/Shift, 1-7 are days
-                for a in areas:
-                    for s in shifts:
-                        assigned = [e for e in employees if a in work_areas[e] and pulp.value(x[e][w][day][s][a]) == 1]
-                        row_idx = row_offset + (1 if s == "Morning" else 2)
-                        if a == "Bar":
-                            bar_schedule[row_idx][col_idx] = ", ".join(assigned)
+        bar_schedule = []
+        kitchen_schedule = []
+        for w in range(num_weeks):
+            week_cols = columns[w * 7:(w + 1) * 7]
+            bar_schedule.extend([
+                ["Day/Shift"] + week_cols,
+                ["Morning"] + [""] * len(week_cols),
+                ["Evening"] + [""] * len(week_cols),
+                []
+            ])
+            kitchen_schedule.extend([
+                ["Day/Shift"] + week_cols,
+                ["Morning"] + [""] * len(week_cols),
+                ["Evening"] + [""] * len(week_cols),
+                []
+            ])
+            # Create Treeview for Bar week
+            tk.Label(bar_frame, text=f"Bar Schedule Week {w+1}").pack(pady=5)
+            bar_tree = ttk.Treeview(bar_frame, columns=["Day/Shift"] + [f"Day{i}" for i in range(7)], show="headings", height=2)
+            bar_tree.heading("Day/Shift", text="Day/Shift")
+            bar_tree.column("Day/Shift", width=80, anchor="w")
+            for i in range(7):
+                text = week_cols[i] if i < len(week_cols) else ""
+                bar_tree.heading(f"Day{i}", text=text)
+                bar_tree.column(f"Day{i}", width=100, anchor="center")
+            all_trees.append(bar_tree)
+            # Create Treeview for Kitchen week
+            tk.Label(kitchen_frame, text=f"Kitchen Schedule Week {w+1}").pack(pady=5)
+            kitchen_tree = ttk.Treeview(kitchen_frame, columns=["Day/Shift"] + [f"Day{i}" for i in range(7)], show="headings", height=2)
+            kitchen_tree.heading("Day/Shift", text="Day/Shift")
+            kitchen_tree.column("Day/Shift", width=80, anchor="w")
+            for i in range(7):
+                text = week_cols[i] if i < len(week_cols) else ""
+                kitchen_tree.heading(f"Day{i}", text=text)
+                kitchen_tree.column(f"Day{i}", width=100, anchor="center")
+            all_trees.append(kitchen_tree)
+            
+            # Fill rows for this week
+            for a, tree, schedule in zip(areas, [bar_tree, kitchen_tree], [bar_schedule, kitchen_schedule]):
+                morning_row = ["Morning"] + [""] * 7
+                evening_row = ["Evening"] + [""] * 7
+                row_offset = w * 4 + 1  # Morning row for this week in schedule
+                for d_idx in range(7):
+                    day_name = day_names[d_idx]
+                    col_idx = d_idx + 1
+                    for s_idx, s in enumerate(shifts):
+                        assigned = [e for e in employees if a in work_areas[e] and pulp.value(x[e][w][day_name][s][a]) == 1]
+                        if s == "Morning":
+                            morning_row[col_idx] = ", ".join(assigned)
+                            schedule[row_offset][col_idx] = ", ".join(assigned)
                         else:
-                            kitchen_schedule[row_idx][col_idx] = ", ".join(assigned)
+                            evening_row[col_idx] = ", ".join(assigned)
+                            schedule[row_offset + 1][col_idx] = ", ".join(assigned)
+                tree.insert("", "end", values=morning_row)
+                tree.insert("", "end", values=evening_row)
+                tree.pack(pady=5, fill="x")
         
-        # Update Treeviews
-        for tree, schedule, area in [(bar_tree, bar_schedule, "Bar"), (kitchen_tree, kitchen_schedule, "Kitchen")]:
-            for row_idx, row in enumerate(schedule):
-                if row:  # Skip blank row
-                    tree.insert("", "end", values=row)
-        
-        # Write Bar_schedule.csv
         with open("Bar_schedule.csv", "w", newline="") as f:
             writer = csv.writer(f)
             for row in bar_schedule:
-                writer.writerow(row)
+                if row:
+                    writer.writerow(row)
         
-        # Write Kitchen_schedule.csv
         with open("Kitchen_schedule.csv", "w", newline="") as f:
             writer = csv.writer(f)
             for row in kitchen_schedule:
-                writer.writerow(row)
+                if row:
+                    writer.writerow(row)
+        
+        # Adjust column widths initially
+        adjust_column_widths()
     else:
-        # Calculate minimum employees needed
-        current, needed = calculate_min_employees(required, work_areas, employees, must_off, max_shifts, constraints["max_weekend_days"], start_date)
+        current, needed = calculate_min_employees(required, work_areas, employees, must_off, max_shifts, constraints["max_weekend_days"], start_date, num_weeks)
         error_message = (
             f"No feasible schedule found even after relaxing all constraints.\n"
             f"Check staffing requirements or employee availability.\n"
@@ -500,60 +516,172 @@ def generate_schedule():
         )
         messagebox.showerror("Error", error_message)
 
-# Tkinter GUI
+# Function to adjust column widths on resize
+def adjust_column_widths():
+    global all_trees
+    width = root.winfo_width()
+    for tree in all_trees:
+        cols = [c for c in tree["columns"] if c != "Day/Shift"]
+        if cols:
+            col_width = max(100, (width - 80 - 40) // len(cols))  # Adjust for paddings and scrollbar
+            for c in cols:
+                tree.column(c, width=col_width)
+
+# Resize event handler
+def on_resize(event):
+    if event.widget == root:
+        adjust_column_widths()
+
+# Mousewheel event handler
+def on_mousewheel(event):
+    canvas.yview_scroll(-1 * (event.delta // 120), "units")
+
+# Function to display input data
+def display_input_data():
+    # Employee Data
+    emp_file = emp_file_var.get()
+    emp_text.delete("1.0", tk.END)
+    if emp_file:
+        try:
+            df = pd.read_csv(emp_file)
+            emp_text.insert(tk.END, df.to_string())
+        except Exception as e:
+            emp_text.insert(tk.END, f"Error loading file: {str(e)}")
+    
+    # Personel Required
+    req_file = req_file_var.get()
+    req_text.delete("1.0", tk.END)
+    if req_file:
+        try:
+            df = pd.read_csv(req_file)
+            req_text.insert(tk.END, df.to_string())
+        except Exception as e:
+            req_text.insert(tk.END, f"Error loading file: {str(e)}")
+    
+    # Hard Limits
+    limits_file = limits_file_var.get()
+    limits_text.delete("1.0", tk.END)
+    if limits_file:
+        try:
+            df = pd.read_csv(limits_file)
+            limits_text.insert(tk.END, df.to_string())
+        except Exception as e:
+            limits_text.insert(tk.END, f"Error loading file: {str(e)}")
+
+# Tkinter GUI with scrollable canvas
 root = tk.Tk()
-root.title("Restaurant Scheduler")
-root.geometry("1000x800")
+root.title("Workforce Optimizer")
+root.geometry("1000x600")
+
+# Create canvas and scrollbar
+canvas = tk.Canvas(root)
+scrollbar = ttk.Scrollbar(root, orient="vertical", command=canvas.yview)
+scrollable_frame = tk.Frame(canvas)
+
+# Configure canvas
+canvas.configure(yscrollcommand=scrollbar.set)
+scrollbar.pack(side="right", fill="y")
+canvas.pack(side="left", fill="both", expand=True)
+canvas_frame = canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+
+# Update scroll region when frame size changes
+def on_frame_configure(event):
+    canvas.configure(scrollregion=canvas.bbox("all"))
+
+scrollable_frame.bind("<Configure>", on_frame_configure)
 
 # Start date selection
-tk.Label(root, text="Select Start Date (Sunday):").pack(pady=5)
-start_date_entry = DateEntry(root, width=12, background='darkblue', foreground='white', borderwidth=2, year=2025, firstweekday='sunday', showweeknumbers=False)
+tk.Label(scrollable_frame, text="Select Start Date:").pack(pady=5)
+start_date_entry = DateEntry(scrollable_frame, width=12, background='darkblue', foreground='white', borderwidth=2, year=2025, firstweekday='sunday', showweeknumbers=False)
 start_date_entry.pack(pady=5)
+
+# Number of weeks input
+tk.Label(scrollable_frame, text="Number of Weeks (1 or more):").pack(pady=5)
+num_weeks_var = tk.IntVar(value=2)
+num_weeks_entry = tk.Entry(scrollable_frame, textvariable=num_weeks_var, width=10)
+num_weeks_entry.pack(pady=5)
 
 # File selection for Employee Data
 emp_file_var = tk.StringVar()
-tk.Label(root, text="Select Employee Data CSV:").pack(pady=5)
-emp_entry = tk.Entry(root, textvariable=emp_file_var, width=50)
+tk.Label(scrollable_frame, text="Select Employee Data CSV:").pack(pady=5)
+emp_entry = tk.Entry(scrollable_frame, textvariable=emp_file_var, width=50)
 emp_entry.pack(pady=5)
-tk.Button(root, text="Browse", command=lambda: [emp_file_var.set(filedialog.askopenfilename(filetypes=[("CSV files", "*.csv")])), save_config()]).pack(pady=5)
+tk.Button(scrollable_frame, text="Browse", command=lambda: [emp_file_var.set(filedialog.askopenfilename(filetypes=[("CSV files", "*.csv")])), save_config()]).pack(pady=5)
 
 # File selection for Personel Required
 req_file_var = tk.StringVar()
-tk.Label(root, text="Select Personel Required CSV:").pack(pady=5)
-req_entry = tk.Entry(root, textvariable=req_file_var, width=50)
+tk.Label(scrollable_frame, text="Select Personel Required CSV:").pack(pady=5)
+req_entry = tk.Entry(scrollable_frame, textvariable=req_file_var, width=50)
 req_entry.pack(pady=5)
-tk.Button(root, text="Browse", command=lambda: [req_file_var.set(filedialog.askopenfilename(filetypes=[("CSV files", "*.csv")])), save_config()]).pack(pady=5)
+tk.Button(scrollable_frame, text="Browse", command=lambda: [req_file_var.set(filedialog.askopenfilename(filetypes=[("CSV files", "*.csv")])), save_config()]).pack(pady=5)
 
 # File selection for Hard Limits
 limits_file_var = tk.StringVar()
-tk.Label(root, text="Select Hard Limits CSV:").pack(pady=5)
-limits_entry = tk.Entry(root, textvariable=limits_file_var, width=50)
+tk.Label(scrollable_frame, text="Select Hard Limits CSV:").pack(pady=5)
+limits_entry = tk.Entry(scrollable_frame, textvariable=limits_file_var, width=50)
 limits_entry.pack(pady=5)
-tk.Button(root, text="Browse", command=lambda: [limits_file_var.set(filedialog.askopenfilename(filetypes=[("CSV files", "*.csv")])), save_config()]).pack(pady=5)
+tk.Button(scrollable_frame, text="Browse", command=lambda: [limits_file_var.set(filedialog.askopenfilename(filetypes=[("CSV files", "*.csv")])), save_config()]).pack(pady=5)
 
 # Load saved file paths
 load_config()
 
-# Schedule display (two Treeviews)
-tk.Label(root, text="Bar Schedule").pack(pady=5)
-bar_tree = ttk.Treeview(root, columns=["Day/Shift"] + [f"Day{i}" for i in range(7)], show="headings", height=7)
-bar_tree.heading("Day/Shift", text="Day/Shift")
-for i in range(7):
-    bar_tree.heading(f"Day{i}", text="")
-    bar_tree.column(f"Day{i}", width=100, anchor="center")
-bar_tree.column("Day/Shift", width=80, anchor="w")
-bar_tree.pack(pady=5, fill="x")
+# View Input Data button
+tk.Button(scrollable_frame, text="View Input Data", command=display_input_data).pack(pady=5)
 
-tk.Label(root, text="Kitchen Schedule").pack(pady=5)
-kitchen_tree = ttk.Treeview(root, columns=["Day/Shift"] + [f"Day{i}" for i in range(7)], show="headings", height=7)
-kitchen_tree.heading("Day/Shift", text="Day/Shift")
-for i in range(7):
-    kitchen_tree.heading(f"Day{i}", text="")
-    kitchen_tree.column(f"Day{i}", width=100, anchor="center")
-kitchen_tree.column("Day/Shift", width=80, anchor="w")
-kitchen_tree.pack(pady=5, fill="x")
+# Input data tabs
+notebook = ttk.Notebook(scrollable_frame)
+notebook.pack(pady=10, fill="both", expand=True)
+
+# Employee Data tab
+emp_tab = tk.Frame(notebook)
+notebook.add(emp_tab, text="Employee Data")
+emp_text = tk.Text(emp_tab, wrap="none", height=10)
+emp_yscroll = ttk.Scrollbar(emp_tab, orient="vertical", command=emp_text.yview)
+emp_xscroll = ttk.Scrollbar(emp_tab, orient="horizontal", command=emp_text.xview)
+emp_text.configure(yscrollcommand=emp_yscroll.set, xscrollcommand=emp_xscroll.set)
+emp_xscroll.pack(side="bottom", fill="x")
+emp_yscroll.pack(side="right", fill="y")
+emp_text.pack(side="left", fill="both", expand=True)
+
+# Personel Required tab
+req_tab = tk.Frame(notebook)
+notebook.add(req_tab, text="Personel Required")
+req_text = tk.Text(req_tab, wrap="none", height=10)
+req_yscroll = ttk.Scrollbar(req_tab, orient="vertical", command=req_text.yview)
+req_xscroll = ttk.Scrollbar(req_tab, orient="horizontal", command=req_text.xview)
+req_text.configure(yscrollcommand=req_yscroll.set, xscrollcommand=req_xscroll.set)
+req_xscroll.pack(side="bottom", fill="x")
+req_yscroll.pack(side="right", fill="y")
+req_text.pack(side="left", fill="both", expand=True)
+
+# Hard Limits tab
+limits_tab = tk.Frame(notebook)
+notebook.add(limits_tab, text="Hard Limits")
+limits_text = tk.Text(limits_tab, wrap="none", height=10)
+limits_yscroll = ttk.Scrollbar(limits_tab, orient="vertical", command=limits_text.yview)
+limits_xscroll = ttk.Scrollbar(limits_tab, orient="horizontal", command=limits_text.xview)
+limits_text.configure(yscrollcommand=limits_yscroll.set, xscrollcommand=limits_xscroll.set)
+limits_xscroll.pack(side="bottom", fill="x")
+limits_yscroll.pack(side="right", fill="y")
+limits_text.pack(side="left", fill="both", expand=True)
+
+# Schedule display frames
+tk.Label(scrollable_frame, text="Bar Schedule").pack(pady=5)
+bar_frame = tk.Frame(scrollable_frame)
+bar_frame.pack(pady=5, fill="x")
+
+tk.Label(scrollable_frame, text="Kitchen Schedule").pack(pady=5)
+kitchen_frame = tk.Frame(scrollable_frame)
+kitchen_frame.pack(pady=5, fill="x")
 
 # Generate button
-tk.Button(root, text="Generate Schedule", command=generate_schedule).pack(pady=10)
+tk.Button(scrollable_frame, text="Generate Schedule", command=generate_schedule).pack(pady=10)
+
+# Bind events
+root.bind("<Configure>", on_resize)
+root.bind("<MouseWheel>", on_mousewheel)
+
+# Global list for trees
+all_trees = []
 
 root.mainloop()
