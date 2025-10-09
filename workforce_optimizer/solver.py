@@ -1,0 +1,172 @@
+import pulp
+import logging
+import time
+from datetime import datetime, timedelta
+from constants import DAYS, SHIFTS
+
+def solve_schedule(employees, days, shifts, areas, shift_prefs, day_prefs, must_off, required, work_areas, constraints, min_shifts, max_shifts,
+                  start_date, relax_day=True, relax_shift=True, relax_weekend=True, relax_min_shifts=True, num_weeks=2):
+    logging.debug("Entering solve_schedule with relax_day=%s, relax_shift=%s, relax_weekend=%s, relax_min_shifts=%s, num_weeks=%d",
+                  relax_day, relax_shift, relax_weekend, relax_min_shifts, num_weeks)
+    prob = pulp.LpProblem("Restaurant_Schedule", pulp.LpMaximize)
+    
+    # Create decision variables
+    x = {}
+    for e in employees:
+        x[e] = {}
+        for w in range(num_weeks):
+            x[e][w] = {}
+            for d in days:
+                x[e][w][d] = {}
+                for s in shifts:
+                    x[e][w][d][s] = {}
+                    for a in work_areas[e]:
+                        x[e][w][d][s][a] = pulp.LpVariable(f"assign_{e}_w{w}_{d}_{s}_{a}", cat="Binary")
+    logging.debug("Created %d decision variables for %d employees, %d weeks, %d days, %d shifts",
+                  len(employees) * num_weeks * len(days) * len(shifts) * max(len(work_areas[e]) for e in employees),
+                  len(employees), num_weeks, len(days), len(shifts))
+    
+    # Set objective function
+    day_penalty = -10 if relax_day else 0
+    shift_penalty = -10 if relax_shift else 0
+    min_shifts_penalty = -100 if relax_min_shifts else 0
+    objective_terms = []
+    for e in employees:
+        for w in range(num_weeks):
+            for d in days:
+                for s in shifts:
+                    for a in work_areas[e]:
+                        coef = (day_prefs[e][d] if day_prefs[e][d] > 0 else day_penalty) + \
+                               (shift_prefs[e][s] if shift_prefs[e][s] > 0 else shift_penalty)
+                        objective_terms.append((f"assign_{e}_w{w}_{d}_{s}_{a}", coef))
+                        prob += x[e][w][d][s][a] * coef
+    logging.debug("Objective function set with %d terms, day_penalty=%d, shift_penalty=%d, min_shifts_penalty=%d",
+                  len(objective_terms), day_penalty, shift_penalty, min_shifts_penalty)
+    for term, coef in objective_terms[:10]:  # Log first 10 for brevity
+        logging.debug("Objective term: %s, coefficient=%d", term, coef)
+    if len(objective_terms) > 10:
+        logging.debug("... and %d more objective terms", len(objective_terms) - 10)
+    
+    # Staffing requirement constraints
+    staffing_constraints = 0
+    for w in range(num_weeks):
+        for d in days:
+            for a in areas:
+                for s in shifts:
+                    prob += pulp.lpSum(x[e][w][d][s][a] for e in employees if a in work_areas[e]) == required[d][a][s]
+                    staffing_constraints += 1
+    logging.debug("Added %d staffing requirement constraints", staffing_constraints)
+    
+    # Must-off constraints
+    must_off_constraints = 0
+    for e in must_off:
+        for _, date_str in must_off[e]:
+            delta = (datetime.strptime(date_str, "%Y-%m-%d").date() - start_date).days
+            if 0 <= delta < 7 * num_weeks:
+                w = delta // 7
+                d_idx = delta % 7
+                d = days[d_idx]
+                for s in shifts:
+                    for a in work_areas[e]:
+                        prob += x[e][w][d][s][a] == 0
+                        must_off_constraints += 1
+                logging.debug("Must-off constraint added for %s on %s (week %d, day %s)", e, date_str, w, d)
+    logging.debug("Added %d must-off constraints", must_off_constraints)
+    
+    # Max shifts per day constraints
+    max_shifts_day_constraints = 0
+    for e in employees:
+        for w in range(num_weeks):
+            for d in days:
+                prob += pulp.lpSum(x[e][w][d][s][a] for s in shifts for a in work_areas[e]) <= constraints["max_shifts_per_day"]
+                max_shifts_day_constraints += 1
+    logging.debug("Added %d max shifts per day constraints", max_shifts_day_constraints)
+    
+    # Max shifts per week constraints
+    max_shifts_week_constraints = 0
+    for e in employees:
+        for w in range(num_weeks):
+            prob += pulp.lpSum(x[e][w][d][s][a] for d in days for s in shifts for a in work_areas[e]) <= max_shifts[e]
+            max_shifts_week_constraints += 1
+    logging.debug("Added %d max shifts per week constraints", max_shifts_week_constraints)
+    
+    # Min shifts per week constraints
+    min_shifts_constraints = 0
+    if relax_min_shifts:
+        for e in employees:
+            for w in range(num_weeks):
+                prob += pulp.lpSum(x[e][w][d][s][a] for d in days for s in shifts for a in work_areas[e]) >= min_shifts[e]
+                min_shifts_constraints += 1
+        logging.debug("Added %d min shifts per week constraints", min_shifts_constraints)
+    
+    # Weekend shift constraints
+    schedule_days = [(w, d) for w in range(num_weeks) for d in days]
+    fri_sun_windows = []
+    for w in range(num_weeks):
+        if w < num_weeks - 1 or num_weeks == 1:
+            fri_sun_windows.append([(w, "Fri"), (w, "Sat"), (w, "Sun")])
+        else:
+            fri_sun_windows.append([(w, "Fri"), (w, "Sat")])
+    weekend_constraints = 0
+    for e in employees:
+        for window in fri_sun_windows:
+            prob += pulp.lpSum(
+                x[e][w][d][s][a]
+                for w, d in window
+                for s in shifts
+                for a in work_areas[e]
+            ) <= constraints["max_weekend_days"]
+            weekend_constraints += 1
+    logging.debug("Added %d weekend shift constraints", weekend_constraints)
+    
+    # Solve the problem
+    start_time = time.time()
+    prob.solve()
+    end_time = time.time()
+    solver_time = end_time - start_time
+    logging.info("Solver status: %s, runtime: %.2f seconds", pulp.LpStatus[prob.status], solver_time)
+    if prob.status == pulp.LpStatusOptimal:
+        logging.info("Objective value: %.2f", pulp.value(prob.objective))
+        assigned_shifts = []
+        for e in employees:
+            for w in range(num_weeks):
+                for d in days:
+                    for s in shifts:
+                        for a in work_areas[e]:
+                            if pulp.value(x[e][w][d][s][a]) == 1:
+                                assigned_shifts.append(f"{e} assigned to {a}, {d}, {s}, week {w}")
+        logging.debug("Assigned shifts: %s", assigned_shifts[:10])
+        if len(assigned_shifts) > 10:
+            logging.debug("... and %d more assigned shifts", len(assigned_shifts) - 10)
+    
+    logging.debug("Exiting solve_schedule")
+    return prob, x
+
+def validate_weekend_constraints(x, employees, days, shifts, work_areas, max_weekend_days, start_date, num_weeks):
+    logging.debug("Entering validate_weekend_constraints")
+    violations = []
+    schedule_days = [(w, d) for w in range(num_weeks) for d in days]
+    fri_sun_windows = []
+    for w in range(num_weeks):
+        if w < num_weeks - 1 or num_weeks == 1:
+            fri_sun_windows.append([(w, "Fri"), (w, "Sat"), (w, "Sun")])
+        else:
+            fri_sun_windows.append([(w, "Fri"), (w, "Sat")])
+    for e in employees:
+        for i, window in enumerate(fri_sun_windows):
+            shift_count = sum(
+                pulp.value(x[e][w][d][s][a])
+                for w, d in window
+                for s in shifts
+                for a in work_areas[e]
+                if pulp.value(x[e][w][d][s][a]) is not None
+            )
+            if shift_count > max_weekend_days:
+                window_dates = " to ".join(
+                    f"{d}, {(start_date + timedelta(days=(w * 7 + days.index(d)))).strftime('%b %d, %y')}"
+                    for w, d in window
+                )
+                violations.append(f"{e} has {int(shift_count)} shifts in weekend period {window_dates}")
+                logging.warning("Weekend constraint violation: %s has %d shifts in %s", e, int(shift_count), window_dates)
+    logging.debug("Exiting validate_weekend_constraints with %d violations", len(violations))
+    return violations

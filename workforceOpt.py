@@ -8,10 +8,22 @@ import json
 import os
 from datetime import datetime, timedelta
 import math
+import logging
+import time
 
-# Function to load saved file paths from config.json
+# Configure logging with date and time in filename
+log_file = f"workforce_optimizer_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.log"
+logging.basicConfig(
+    filename=log_file,
+    level=logging.DEBUG,
+    format='%(asctime)s - %(levelname)s - %(message)s'
+)
+
+# Function to load saved file paths and window geometry from config.json
 def load_config():
+    logging.debug("Entering load_config")
     config_file = "config.json"
+    default_geometry = "1000x600"
     if os.path.exists(config_file):
         try:
             with open(config_file, "r") as f:
@@ -19,26 +31,46 @@ def load_config():
                 emp_file_var.set(config.get("emp_file", ""))
                 req_file_var.set(config.get("req_file", ""))
                 limits_file_var.set(config.get("limits_file", ""))
-        except:
-            print("Warning: Failed to load config.json, using empty paths")
+                geometry = config.get("window_geometry", default_geometry)
+                root.geometry(geometry)
+                logging.info("Loaded config.json: %s", config)
+        except Exception as e:
+            logging.warning("Failed to load config.json: %s", str(e))
+            print("Warning: Failed to load config.json, using empty paths and default geometry")
+            root.geometry(default_geometry)
     else:
-        print("Warning: config.json not found, using empty paths")
+        logging.warning("config.json not found, using empty paths and default geometry")
+        print("Warning: config.json not found, using empty paths and default geometry")
+        root.geometry(default_geometry)
+    logging.debug("Exiting load_config")
 
-# Function to save file paths to config.json
+# Function to save file paths and window geometry to config.json
 def save_config():
+    logging.debug("Entering save_config")
     config = {
         "emp_file": emp_file_var.get(),
         "req_file": req_file_var.get(),
-        "limits_file": limits_file_var.get()
+        "limits_file": limits_file_var.get(),
+        "window_geometry": root.geometry()
     }
     try:
         with open("config.json", "w") as f:
             json.dump(config, f, indent=4)
+        logging.info("Saved config.json: %s", config)
     except Exception as e:
+        logging.warning("Failed to save config.json: %s", str(e))
         print(f"Warning: Failed to save config.json ({str(e)})")
+    logging.debug("Exiting save_config")
+
+# Function to handle window close
+def on_closing():
+    logging.debug("Window closing, saving config")
+    save_config()
+    root.destroy()
 
 # Function to calculate minimum employees needed
 def calculate_min_employees(required, work_areas, employees, must_off, max_shifts_per_week, max_weekend_shifts, start_date, num_weeks):
+    logging.debug("Entering calculate_min_employees")
     areas = ["Bar", "Kitchen"]
     days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
     
@@ -49,6 +81,7 @@ def calculate_min_employees(required, work_areas, employees, must_off, max_shift
             current["Bar"] += 1
         if "Kitchen" in work_areas[emp]:
             current["Kitchen"] += 1
+    logging.info("Current employees: Bar=%d, Kitchen=%d", current["Bar"], current["Kitchen"])
     
     # Total shifts per area
     total_shifts = {"Bar": 0, "Kitchen": 0}
@@ -56,6 +89,7 @@ def calculate_min_employees(required, work_areas, employees, must_off, max_shift
         for area in areas:
             for shift in ["Morning", "Evening"]:
                 total_shifts[area] += required[day][area][shift] * num_weeks
+    logging.debug("Total shifts: Bar=%d, Kitchen=%d", total_shifts["Bar"], total_shifts["Kitchen"])
     
     # Weekend shifts
     weekend_shifts = {"Bar": 0, "Kitchen": 0}
@@ -70,22 +104,26 @@ def calculate_min_employees(required, work_areas, employees, must_off, max_shift
                 for area in areas:
                     for shift in ["Morning", "Evening"]:
                         weekend_shifts[area] += required[day][area][shift]
+    logging.debug("Weekend shifts: Bar=%d, Kitchen=%d", weekend_shifts["Bar"], weekend_shifts["Kitchen"])
     
     # Max shifts per employee
     avg_max_shifts = sum(max_shifts_per_week.values()) / len(max_shifts_per_week) if max_shifts_per_week else 3.067
+    logging.debug("Average max shifts per employee: %.3f", avg_max_shifts)
     
     # Adjust for must-have-off within the schedule period
     unavailable_shifts = {"Bar": 0, "Kitchen": 0}
     for emp in must_off:
         for _, date_str in must_off[emp]:
             try:
-                off_date = datetime.strptime(date_str, "%Y-%m-%d")
+                off_date = datetime.strptime(date_str, "%Y-%m-%d").date()
                 delta = (off_date - start_date).days
                 if 0 <= delta < 7 * num_weeks:
                     for area in work_areas[emp]:
                         unavailable_shifts[area] += 1
             except:
+                logging.warning("Invalid must-off date for %s: %s", emp, date_str)
                 continue
+    logging.debug("Unavailable shifts due to must-off: Bar=%d, Kitchen=%d", unavailable_shifts["Bar"], unavailable_shifts["Kitchen"])
     
     # Minimum employees needed
     needed = {"Bar": 0, "Kitchen": 0}
@@ -96,23 +134,32 @@ def calculate_min_employees(required, work_areas, employees, must_off, max_shift
         needed[area] = max(employees_by_total, employees_by_weekend)
         if area == "Bar" and num_weeks == 2:
             needed[area] = max(needed[area], 6)
+    logging.info("Minimum employees needed: Bar=%d, Kitchen=%d", needed["Bar"], needed["Kitchen"])
     
+    logging.debug("Exiting calculate_min_employees")
     return current, needed
 
 # Function to parse CSV files
 def load_csv(emp_file, req_file, limits_file, start_date):
+    logging.debug("Entering load_csv with emp_file=%s, req_file=%s, limits_file=%s", emp_file, req_file, limits_file)
+    invalid_dates = []
     try:
         emp_df = pd.read_csv(emp_file, index_col=0)
         emp_df.index = emp_df.index.astype(str).str.strip().str.lower()
+        logging.debug("Employee Data CSV loaded: %s", emp_df.to_string())
         if emp_df.index.isna().any() or "" in emp_df.index:
+            logging.error("Employee_Data.csv has invalid or missing index values")
             raise ValueError("Employee_Data.csv has invalid or missing index values")
         employees = [col for col in emp_df.columns if pd.notna(col)]
         if not employees:
+            logging.error("No valid employee columns found in Employee_Data.csv")
             raise ValueError("No valid employee columns found in Employee_Data.csv")
+        logging.debug("Employees: %s", employees)
         
         work_areas = {}
         area_row = "work area"
         if area_row not in emp_df.index:
+            logging.error("Cannot find 'Work Area' row in Employee_Data.csv")
             raise ValueError("Cannot find 'Work Area' row in Employee_Data.csv")
         areas = ["Bar", "Kitchen"]
         for emp in employees:
@@ -120,11 +167,14 @@ def load_csv(emp_file, req_file, limits_file, start_date):
             if pd.notna(area) and area in areas:
                 work_areas[emp] = [area]
             else:
+                logging.error("Invalid work area for %s: %s", emp, area)
                 raise ValueError(f"Invalid work area for {emp}: {area}")
+        logging.debug("Work areas: %s", work_areas)
         
         shift_prefs = {}
         shift_row = "shift weight"
         if shift_row not in emp_df.index:
+            logging.error("Cannot find 'Shift Weight' row in Employee_Data.csv")
             raise ValueError("Cannot find 'Shift Weight' row in Employee_Data.csv")
         for emp in employees:
             shift = emp_df.loc[shift_row, emp]
@@ -133,6 +183,7 @@ def load_csv(emp_file, req_file, limits_file, start_date):
             else:
                 shift = str(shift).strip().lower()
                 if shift not in ["morning", "evening"]:
+                    logging.warning("Invalid shift '%s' for %s, assuming no preference", shift, emp)
                     print(f"Warning: Invalid shift '{shift}' for {emp}, assuming no preference")
                     shift_prefs[emp] = {"Morning": 0, "Evening": 0}
                 else:
@@ -140,11 +191,13 @@ def load_csv(emp_file, req_file, limits_file, start_date):
                         "Morning": 10 if shift == "morning" else 0,
                         "Evening": 10 if shift == "evening" else 0
                     }
+        logging.debug("Shift preferences: %s", shift_prefs)
         
         days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
         day_prefs = {}
         day_row = "day weights"
         if day_row not in emp_df.index:
+            logging.error("Cannot find 'Day Weights' row in Employee_Data.csv")
             raise ValueError("Cannot find 'Day Weights' row in Employee_Data.csv")
         for emp in employees:
             day_str = emp_df.loc[day_row, emp]
@@ -154,15 +207,19 @@ def load_csv(emp_file, req_file, limits_file, start_date):
                     preferred_days = [d.strip() for d in str(day_str).split(", ")]
                     invalid_days = [d for d in preferred_days if d not in days]
                     if invalid_days:
+                        logging.warning("Invalid days %s for %s, ignoring them", invalid_days, emp)
                         print(f"Warning: Invalid days {invalid_days} for {emp}, ignoring them")
                         preferred_days = [d for d in preferred_days if d in days]
                 except:
+                    logging.warning("Failed to parse day preferences for %s, assuming none", emp)
                     print(f"Warning: Failed to parse day preferences for {emp}, assuming none")
             day_prefs[emp] = {day: 10 if day in preferred_days else 0 for day in days}
+        logging.debug("Day preferences: %s", day_prefs)
         
         must_off = {}
         off_row = "must have off"
         if off_row not in emp_df.index:
+            logging.warning("Cannot find 'Must have off' row, assuming none")
             print("Warning: Cannot find 'Must have off' row, assuming none")
         else:
             for emp in employees:
@@ -172,39 +229,59 @@ def load_csv(emp_file, req_file, limits_file, start_date):
                     must_off[emp] = []
                     for date_str in off_dates:
                         try:
-                            off_date = pd.to_datetime(date_str)
+                            # Try parsing date with flexible parsing
+                            off_date = pd.to_datetime(date_str, errors='coerce')
+                            if pd.isna(off_date):
+                                logging.warning("Failed to parse date '%s' for %s", date_str, emp)
+                                invalid_dates.append(f"{emp}: {date_str}")
+                                continue
+                            # Convert to datetime.date for consistency
+                            off_date = off_date.date()
+                            logging.debug("Parsed date '%s' as %s for %s", date_str, off_date.strftime('%Y-%m-%d'), emp)
                             delta = (off_date - start_date).days
                             if 0 <= delta < 7 * num_weeks_var.get():
                                 day_name = off_date.strftime("%a")
                                 must_off[emp].append((day_name, off_date.strftime("%Y-%m-%d")))
                             else:
+                                logging.warning("Must-have-off date %s for %s outside schedule, ignoring", off_date.strftime('%Y-%m-%d'), emp)
                                 print(f"Warning: Must-have-off date {off_date.strftime('%Y-%m-%d')} for {emp} outside schedule, ignoring")
-                        except:
-                            print(f"Warning: Invalid date format '{date_str}' for {emp}'s must-have-off")
+                        except Exception as e:
+                            logging.warning("Exception parsing date '%s' for %s: %s", date_str, emp, str(e))
+                            invalid_dates.append(f"{emp}: {date_str}")
+        logging.debug("Must have off: %s", must_off)
+        
+        if invalid_dates:
+            messagebox.showwarning("Invalid Dates", "The following must-have-off dates are invalid and will be ignored:\n" + "\n".join(invalid_dates))
         
         min_shifts = {}
         max_shifts = {}
         min_row = "min shifts per week"
         max_row = "max shifts per week"
         if min_row not in emp_df.index:
+            logging.warning("Cannot find 'Min Shifts per Week' row, assuming 0")
             print("Warning: Cannot find 'Min Shifts per Week' row, assuming 0")
             min_shifts = {emp: 0 for emp in employees}
         else:
             for emp in employees:
                 value = emp_df.loc[min_row, emp]
                 min_shifts[emp] = int(value) if pd.notna(value) else 0
+        logging.debug("Min shifts per week: %s", min_shifts)
         
         if max_row not in emp_df.index:
+            logging.warning("Cannot find 'Max Shifts per Week' row, assuming no limit")
             print("Warning: Cannot find 'Max Shifts per Week' row, assuming no limit")
             max_shifts = {emp: float("inf") for emp in employees}
         else:
             for emp in employees:
                 value = emp_df.loc[max_row, emp]
                 max_shifts[emp] = int(value) if pd.notna(value) else float("inf")
+        logging.debug("Max shifts per week: %s", max_shifts)
         
         req_df = pd.read_csv(req_file, index_col=0)
         req_df.index = req_df.index.astype(str).str.strip()
+        logging.debug("Personel Required CSV loaded: %s", req_df.to_string())
         if req_df.index.isna().any() or "" in req_df.index:
+            logging.error("Personel_Required.csv has invalid or missing index values")
             raise ValueError("Personel_Required.csv has invalid or missing index values")
         required = {}
         for day in days:
@@ -217,10 +294,14 @@ def load_csv(emp_file, req_file, limits_file, start_date):
                         "Evening": int(counts[1])
                     }
                 except:
+                    logging.error("Invalid staffing requirement for %s on %s", area, day)
                     raise ValueError(f"Invalid staffing requirement for {area} on {day}")
+        logging.debug("Required staffing: %s", required)
         
         limits_df = pd.read_csv(limits_file)
+        logging.debug("Hard Limits CSV loaded: %s", limits_df.to_string())
         if limits_df.empty:
+            logging.error("Hard_Limits.csv is empty")
             raise ValueError("Hard_Limits.csv is empty")
         constraints = {
             "max_weekend_days": 1,
@@ -233,8 +314,10 @@ def load_csv(emp_file, req_file, limits_file, start_date):
                 if pd.notna(value):
                     constraints["max_weekend_days"] = int(value)
                 else:
+                    logging.warning("Max Number of Weekend Days is empty, using default (1)")
                     print("Warning: Max Number of Weekend Days is empty, using default (1)")
             else:
+                logging.warning("Max Number of Weekend Days column missing, using default (1)")
                 print("Warning: Max Number of Weekend Days column missing, using default (1)")
                 
             if "Max Number of Shifts per Day" in limits_df.columns:
@@ -242,8 +325,10 @@ def load_csv(emp_file, req_file, limits_file, start_date):
                 if pd.notna(value):
                     constraints["max_shifts_per_day"] = int(value)
                 else:
+                    logging.warning("Max Number of Shifts per Day is empty, using default (1)")
                     print("Warning: Max Number of Shifts per Day is empty, using default (1)")
             else:
+                logging.warning("Max Number of Shifts per Day column missing, using default (1)")
                 print("Warning: Max Number of Shifts per Day column missing, using default (1)")
                 
             if "Violate Rules Order" in limits_df.columns:
@@ -251,22 +336,30 @@ def load_csv(emp_file, req_file, limits_file, start_date):
                 if pd.notna(value) and isinstance(value, str):
                     constraints["violate_order"] = [v.strip() for v in value.split(", ")]
                 else:
+                    logging.warning("Violate Rules Order is invalid or empty, using default order")
                     print("Warning: Violate Rules Order is invalid or empty, using default order")
             else:
+                logging.warning("Violate Rules Order column missing, using default order")
                 print("Warning: Violate Rules Order column missing, using default order")
         except Exception as e:
+            logging.warning("Error parsing Hard_Limits.csv: %s", str(e))
             print(f"Warning: Error parsing Hard_Limits.csv ({str(e)}), using default constraints")
+        logging.debug("Constraints: %s", constraints)
         
+        logging.debug("Exiting load_csv")
         return employees, days, ["Morning", "Evening"], areas, shift_prefs, day_prefs, must_off, required, work_areas, constraints, min_shifts, max_shifts
     except Exception as e:
+        logging.error("Failed to load CSV files: %s", str(e))
         messagebox.showerror("Error", f"Failed to load CSV files: {str(e)}")
         return None
 
 # Function to solve scheduling problem
 def solve_schedule(employees, days, shifts, areas, shift_prefs, day_prefs, must_off, required, work_areas, constraints, min_shifts, max_shifts,
                   relax_day=True, relax_shift=True, relax_weekend=True, relax_min_shifts=True, num_weeks=2):
+    logging.debug("Entering solve_schedule with relax_day=%s, relax_shift=True, relax_weekend=True, relax_min_shifts=True, num_weeks=2")
     prob = pulp.LpProblem("Restaurant_Schedule", pulp.LpMaximize)
     
+    # Create decision variables
     x = {}
     for e in employees:
         x[e] = {}
@@ -278,48 +371,84 @@ def solve_schedule(employees, days, shifts, areas, shift_prefs, day_prefs, must_
                     x[e][w][d][s] = {}
                     for a in work_areas[e]:
                         x[e][w][d][s][a] = pulp.LpVariable(f"assign_{e}_w{w}_{d}_{s}_{a}", cat="Binary")
+    logging.debug("Created %d decision variables for %d employees, %d weeks, %d days, %d shifts",
+                  len(employees) * num_weeks * len(days) * len(shifts) * max(len(work_areas[e]) for e in employees),
+                  len(employees), num_weeks, len(days), len(shifts))
     
+    # Set objective function
     day_penalty = -10 if relax_day else 0
     shift_penalty = -10 if relax_shift else 0
     min_shifts_penalty = -100 if relax_min_shifts else 0
-    prob += pulp.lpSum(
-        x[e][w][d][s][a] * (
-            (day_prefs[e][d] if day_prefs[e][d] > 0 else day_penalty) +
-            (shift_prefs[e][s] if shift_prefs[e][s] > 0 else shift_penalty)
-        )
-        for e in employees for w in range(num_weeks) for d in days for s in shifts for a in work_areas[e]
-    )
+    objective_terms = []
+    for e in employees:
+        for w in range(num_weeks):
+            for d in days:
+                for s in shifts:
+                    for a in work_areas[e]:
+                        coef = (day_prefs[e][d] if day_prefs[e][d] > 0 else day_penalty) + \
+                               (shift_prefs[e][s] if shift_prefs[e][s] > 0 else shift_penalty)
+                        objective_terms.append((f"assign_{e}_w{w}_{d}_{s}_{a}", coef))
+                        prob += x[e][w][d][s][a] * coef
+    logging.debug("Objective function set with %d terms, day_penalty=%d, shift_penalty=%d, min_shifts_penalty=%d",
+                  len(objective_terms), day_penalty, shift_penalty, min_shifts_penalty)
+    for term, coef in objective_terms[:10]:  # Log first 10 for brevity
+        logging.debug("Objective term: %s, coefficient=%d", term, coef)
+    if len(objective_terms) > 10:
+        logging.debug("... and %d more objective terms", len(objective_terms) - 10)
     
+    # Staffing requirement constraints
+    staffing_constraints = 0
     for w in range(num_weeks):
         for d in days:
             for a in areas:
                 for s in shifts:
                     prob += pulp.lpSum(x[e][w][d][s][a] for e in employees if a in work_areas[e]) == required[d][a][s]
+                    staffing_constraints += 1
+    logging.debug("Added %d staffing requirement constraints", staffing_constraints)
     
+    # Must-off constraints
+    must_off_constraints = 0
     for e in must_off:
         for _, date_str in must_off[e]:
-            delta = (datetime.strptime(date_str, "%Y-%m-%d") - start_date).days
+            delta = (datetime.strptime(date_str, "%Y-%m-%d").date() - start_date).days
             if 0 <= delta < 7 * num_weeks:
                 w = delta // 7
-                d = days[delta % 7]
+                d_idx = delta % 7
+                d = days[d_idx]
                 for s in shifts:
                     for a in work_areas[e]:
                         prob += x[e][w][d][s][a] == 0
+                        must_off_constraints += 1
+                logging.debug("Must-off constraint added for %s on %s (week %d, day %s)", e, date_str, w, d)
+    logging.debug("Added %d must-off constraints", must_off_constraints)
     
+    # Max shifts per day constraints
+    max_shifts_day_constraints = 0
     for e in employees:
         for w in range(num_weeks):
             for d in days:
                 prob += pulp.lpSum(x[e][w][d][s][a] for s in shifts for a in work_areas[e]) <= constraints["max_shifts_per_day"]
+                max_shifts_day_constraints += 1
+    logging.debug("Added %d max shifts per day constraints", max_shifts_day_constraints)
     
+    # Max shifts per week constraints
+    max_shifts_week_constraints = 0
     for e in employees:
         for w in range(num_weeks):
             prob += pulp.lpSum(x[e][w][d][s][a] for d in days for s in shifts for a in work_areas[e]) <= max_shifts[e]
+            max_shifts_week_constraints += 1
+    logging.debug("Added %d max shifts per week constraints", max_shifts_week_constraints)
     
+    # Min shifts per week constraints
+    min_shifts_constraints = 0
     if relax_min_shifts:
         for e in employees:
             for w in range(num_weeks):
                 prob += pulp.lpSum(x[e][w][d][s][a] for d in days for s in shifts for a in work_areas[e]) >= min_shifts[e]
+                min_shifts_constraints += 1
+        logging.debug("Added %d min shifts per week constraints", min_shifts_constraints)
     
+    # Weekend shift constraints
     schedule_days = [(w, d) for w in range(num_weeks) for d in days]
     fri_sun_windows = []
     for w in range(num_weeks):
@@ -327,6 +456,7 @@ def solve_schedule(employees, days, shifts, areas, shift_prefs, day_prefs, must_
             fri_sun_windows.append([(w, "Fri"), (w, "Sat"), (w, "Sun")])
         else:
             fri_sun_windows.append([(w, "Fri"), (w, "Sat")])
+    weekend_constraints = 0
     for e in employees:
         for window in fri_sun_windows:
             prob += pulp.lpSum(
@@ -335,12 +465,35 @@ def solve_schedule(employees, days, shifts, areas, shift_prefs, day_prefs, must_
                 for s in shifts
                 for a in work_areas[e]
             ) <= constraints["max_weekend_days"]
+            weekend_constraints += 1
+    logging.debug("Added %d weekend shift constraints", weekend_constraints)
     
+    # Solve the problem
+    start_time = time.time()
     prob.solve()
+    end_time = time.time()
+    solver_time = end_time - start_time
+    logging.info("Solver status: %s, runtime: %.2f seconds", pulp.LpStatus[prob.status], solver_time)
+    if prob.status == pulp.LpStatusOptimal:
+        logging.info("Objective value: %.2f", pulp.value(prob.objective))
+        assigned_shifts = []
+        for e in employees:
+            for w in range(num_weeks):
+                for d in days:
+                    for s in shifts:
+                        for a in work_areas[e]:
+                            if pulp.value(x[e][w][d][s][a]) == 1:
+                                assigned_shifts.append(f"{e} assigned to {a}, {d}, {s}, week {w}")
+        logging.debug("Assigned shifts: %s", assigned_shifts[:10])
+        if len(assigned_shifts) > 10:
+            logging.debug("... and %d more assigned shifts", len(assigned_shifts) - 10)
+    
+    logging.debug("Exiting solve_schedule")
     return prob, x
 
 # Function to validate weekend constraints
 def validate_weekend_constraints(x, employees, days, shifts, work_areas, max_weekend_days, start_date, num_weeks):
+    logging.debug("Entering validate_weekend_constraints")
     violations = []
     schedule_days = [(w, d) for w in range(num_weeks) for d in days]
     fri_sun_windows = []
@@ -364,18 +517,24 @@ def validate_weekend_constraints(x, employees, days, shifts, work_areas, max_wee
                     for w, d in window
                 )
                 violations.append(f"{e} has {int(shift_count)} shifts in weekend period {window_dates}")
+                logging.warning("Weekend constraint violation: %s has %d shifts in %s", e, int(shift_count), window_dates)
+    logging.debug("Exiting validate_weekend_constraints with %d violations", len(violations))
     return violations
 
 # Function to generate schedule with relaxation
 def generate_schedule():
+    logging.debug("Entering generate_schedule")
     global start_date, num_weeks_var, all_trees
     try:
         start_date = start_date_entry.get_date()
         num_weeks = num_weeks_var.get()
         if not isinstance(num_weeks, int) or num_weeks < 1:
+            logging.error("Number of weeks must be an integer >= 1: %s", num_weeks)
             messagebox.showerror("Error", "Number of weeks must be an integer >= 1")
             return
+        logging.info("Start date: %s, Number of weeks: %d", start_date.strftime('%Y-%m-%d'), num_weeks)
     except:
+        logging.error("Invalid start date or number of weeks")
         messagebox.showerror("Error", "Invalid start date or number of weeks")
         return
     
@@ -383,14 +542,19 @@ def generate_schedule():
     req_file = req_file_var.get()
     limits_file = limits_file_var.get()
     if not all([emp_file, req_file, limits_file]):
+        logging.error("Missing CSV files: emp_file=%s, req_file=%s, limits_file=%s", emp_file, req_file, limits_file)
         messagebox.showerror("Error", "Please select all three CSV files")
         return
     
     data = load_csv(emp_file, req_file, limits_file, start_date)
     if not data:
+        logging.error("load_csv returned None")
         return
     
     employees, days, shifts, areas, shift_prefs, day_prefs, must_off, required, work_areas, constraints, min_shifts, max_shifts = data
+    
+    # Calculate current and needed employees
+    current, needed = calculate_min_employees(required, work_areas, employees, must_off, max_shifts, constraints["max_weekend_days"], start_date, num_weeks)
     
     relax_map = {
         "Day Weights": "relax_day",
@@ -400,22 +564,26 @@ def generate_schedule():
     }
     relax_order = [(True, True, True, True, "All constraints enforced")]
     for i, rule in enumerate(constraints["violate_order"], 1):
-        current = list(relax_order[-1][:4])
+        relax_flags = list(relax_order[-1][:4])
         if rule in relax_map:
             idx = list(relax_map.keys()).index(rule)
-            current[idx] = False
-        relax_order.append(tuple(current) + (f"Relax {', '.join(constraints['violate_order'][:i])}",))
+            relax_flags[idx] = False
+        relax_order.append(tuple(relax_flags) + (f"Relax {', '.join(constraints['violate_order'][:i])}",))
     
     solution = None
     x = None
     relaxed_message = ""
     for relax_day, relax_shift, relax_weekend, relax_min_shifts, msg in relax_order:
+        logging.debug("Trying relaxation: %s", msg)
         prob, x = solve_schedule(employees, days, shifts, areas, shift_prefs, day_prefs, must_off, required, work_areas,
                                  constraints, min_shifts, max_shifts, relax_day, relax_shift, relax_weekend, relax_min_shifts, num_weeks)
         if prob.status == pulp.LpStatusOptimal:
             relaxed_message = msg
             solution = prob
+            logging.info("Optimal schedule found with relaxation: %s", msg)
             break
+        else:
+            logging.warning("No optimal solution with relaxation: %s", msg)
     
     # Clear existing schedules
     for widget in bar_frame.winfo_children():
@@ -424,15 +592,28 @@ def generate_schedule():
         widget.destroy()
     all_trees = []
     
+    employee_message = (
+        f"Current Employees - Bar: {current['Bar']}, Kitchen: {current['Kitchen']}\n"
+        f"Minimum Employees Needed - Bar: {needed['Bar']}, Kitchen: {needed['Kitchen']}"
+    )
+    logging.info(employee_message)
+    
+    date_str = datetime.now().strftime('%Y-%m-%d')
     if solution and solution.status == pulp.LpStatusOptimal:
         violations = validate_weekend_constraints(x, employees, days, shifts, work_areas, constraints["max_weekend_days"], start_date, num_weeks)
         violation_message = "\n".join(violations) if violations else "None"
-        messagebox.showinfo("Success", f"Optimal schedule found! ({relaxed_message})\nWeekend constraint violations:\n{violation_message}")
+        message = (
+            f"Optimal schedule found! ({relaxed_message})\n"
+            f"{employee_message}\n"
+            f"Weekend constraint violations:\n{violation_message}"
+        )
+        messagebox.showinfo("Success", message)
+        logging.info("Schedule generation successful: %s", message)
         
         total_days = 7 * num_weeks
         dates = [(start_date + timedelta(days=i)) for i in range(total_days)]
         start_weekday = start_date.weekday()
-        day_names = days[start_weekday:] + days[:start_weekday]
+        day_names = days[(start_weekday + 1) % 7:] + days[:(start_weekday + 1) % 7]
         columns = [f"{day_names[i % 7]}, {d.strftime('%b %d, %y')}" for i, d in enumerate(dates)]
         
         bar_schedule = []
@@ -453,23 +634,23 @@ def generate_schedule():
             ])
             # Create Treeview for Bar week
             tk.Label(bar_frame, text=f"Bar Schedule Week {w+1}").pack(pady=5)
-            bar_tree = ttk.Treeview(bar_frame, columns=["Day/Shift"] + [f"Day{i}" for i in range(7)], show="headings", height=2)
-            bar_tree.heading("Day/Shift", text="Day/Shift")
-            bar_tree.column("Day/Shift", width=80, anchor="w")
+            bar_tree = ttk.Treeview(bar_frame, columns=[f"Col{i}" for i in range(8)], show="headings", height=2)
+            bar_tree.heading("Col0", text="Day/Shift")
+            bar_tree.column("Col0", width=80, anchor="w")
             for i in range(7):
                 text = week_cols[i] if i < len(week_cols) else ""
-                bar_tree.heading(f"Day{i}", text=text)
-                bar_tree.column(f"Day{i}", width=100, anchor="center")
+                bar_tree.heading(f"Col{i+1}", text=text)
+                bar_tree.column(f"Col{i+1}", width=100, anchor="center")
             all_trees.append(bar_tree)
             # Create Treeview for Kitchen week
             tk.Label(kitchen_frame, text=f"Kitchen Schedule Week {w+1}").pack(pady=5)
-            kitchen_tree = ttk.Treeview(kitchen_frame, columns=["Day/Shift"] + [f"Day{i}" for i in range(7)], show="headings", height=2)
-            kitchen_tree.heading("Day/Shift", text="Day/Shift")
-            kitchen_tree.column("Day/Shift", width=80, anchor="w")
+            kitchen_tree = ttk.Treeview(kitchen_frame, columns=[f"Col{i}" for i in range(8)], show="headings", height=2)
+            kitchen_tree.heading("Col0", text="Day/Shift")
+            kitchen_tree.column("Col0", width=80, anchor="w")
             for i in range(7):
                 text = week_cols[i] if i < len(week_cols) else ""
-                kitchen_tree.heading(f"Day{i}", text=text)
-                kitchen_tree.column(f"Day{i}", width=100, anchor="center")
+                kitchen_tree.heading(f"Col{i+1}", text=text)
+                kitchen_tree.column(f"Col{i+1}", width=100, anchor="center")
             all_trees.append(kitchen_tree)
             
             # Fill rows for this week
@@ -491,41 +672,49 @@ def generate_schedule():
                 tree.insert("", "end", values=morning_row)
                 tree.insert("", "end", values=evening_row)
                 tree.pack(pady=5, fill="x")
+                logging.debug("Schedule for %s Week %d populated", a, w+1)
         
-        with open("Bar_schedule.csv", "w", newline="") as f:
+        with open(f"Bar_schedule_{date_str}.csv", "w", newline="") as f:
             writer = csv.writer(f)
             for row in bar_schedule:
                 if row:
                     writer.writerow(row)
+        logging.info("Bar schedule saved to Bar_schedule_%s.csv", date_str)
         
-        with open("Kitchen_schedule.csv", "w", newline="") as f:
+        with open(f"Kitchen_schedule_{date_str}.csv", "w", newline="") as f:
             writer = csv.writer(f)
             for row in kitchen_schedule:
                 if row:
                     writer.writerow(row)
+        logging.info("Kitchen schedule saved to Kitchen_schedule_%s.csv", date_str)
         
         # Adjust column widths initially
         adjust_column_widths()
     else:
-        current, needed = calculate_min_employees(required, work_areas, employees, must_off, max_shifts, constraints["max_weekend_days"], start_date, num_weeks)
         error_message = (
             f"No feasible schedule found even after relaxing all constraints.\n"
             f"Check staffing requirements or employee availability.\n"
-            f"Current Bar: {current['Bar']}, Needed Bar: {needed['Bar']}\n"
-            f"Current Kitchen: {current['Kitchen']}, Needed Kitchen: {needed['Kitchen']}"
+            f"{employee_message}"
         )
         messagebox.showerror("Error", error_message)
+        logging.error(error_message)
+    
+    logging.debug("Exiting generate_schedule")
 
 # Function to adjust column widths on resize
 def adjust_column_widths():
     global all_trees
     width = root.winfo_width()
     for tree in all_trees:
-        cols = [c for c in tree["columns"] if c != "Day/Shift"]
+        cols = [c for c in tree["columns"] if c != "Col0"]
         if cols:
             col_width = max(100, (width - 80 - 40) // len(cols))  # Adjust for paddings and scrollbar
             for c in cols:
                 tree.column(c, width=col_width)
+    # Adjust input data tabs
+    notebook.update_idletasks()
+    for tab in [emp_text, req_text, limits_text]:
+        tab.configure(width=max(50, width // 10))  # Adjust text widget width
 
 # Resize event handler
 def on_resize(event):
@@ -538,6 +727,7 @@ def on_mousewheel(event):
 
 # Function to display input data
 def display_input_data():
+    logging.debug("Entering display_input_data")
     # Employee Data
     emp_file = emp_file_var.get()
     emp_text.delete("1.0", tk.END)
@@ -545,8 +735,10 @@ def display_input_data():
         try:
             df = pd.read_csv(emp_file)
             emp_text.insert(tk.END, df.to_string())
+            logging.info("Displayed Employee Data: %s", emp_file)
         except Exception as e:
             emp_text.insert(tk.END, f"Error loading file: {str(e)}")
+            logging.error("Error loading Employee Data: %s", str(e))
     
     # Personel Required
     req_file = req_file_var.get()
@@ -555,8 +747,10 @@ def display_input_data():
         try:
             df = pd.read_csv(req_file)
             req_text.insert(tk.END, df.to_string())
+            logging.info("Displayed Personel Required: %s", req_file)
         except Exception as e:
             req_text.insert(tk.END, f"Error loading file: {str(e)}")
+            logging.error("Error loading Personel Required: %s", str(e))
     
     # Hard Limits
     limits_file = limits_file_var.get()
@@ -565,8 +759,12 @@ def display_input_data():
         try:
             df = pd.read_csv(limits_file)
             limits_text.insert(tk.END, df.to_string())
+            logging.info("Displayed Hard Limits: %s", limits_file)
         except Exception as e:
             limits_text.insert(tk.END, f"Error loading file: {str(e)}")
+            logging.error("Error loading Hard Limits: %s", str(e))
+    adjust_column_widths()  # Ensure tabs resize after loading data
+    logging.debug("Exiting display_input_data")
 
 # Tkinter GUI with scrollable canvas
 root = tk.Tk()
@@ -582,11 +780,12 @@ scrollable_frame = tk.Frame(canvas)
 canvas.configure(yscrollcommand=scrollbar.set)
 scrollbar.pack(side="right", fill="y")
 canvas.pack(side="left", fill="both", expand=True)
-canvas_frame = canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+canvas_frame = canvas.create_window((0, 0), window=scrollable_frame, anchor="nw", width=root.winfo_width())
 
-# Update scroll region when frame size changes
+# Update scroll region and canvas width when frame size changes
 def on_frame_configure(event):
     canvas.configure(scrollregion=canvas.bbox("all"))
+    canvas.itemconfig(canvas_frame, width=root.winfo_width())
 
 scrollable_frame.bind("<Configure>", on_frame_configure)
 
@@ -622,7 +821,7 @@ limits_entry = tk.Entry(scrollable_frame, textvariable=limits_file_var, width=50
 limits_entry.pack(pady=5)
 tk.Button(scrollable_frame, text="Browse", command=lambda: [limits_file_var.set(filedialog.askopenfilename(filetypes=[("CSV files", "*.csv")])), save_config()]).pack(pady=5)
 
-# Load saved file paths
+# Load saved file paths and window geometry
 load_config()
 
 # View Input Data button
@@ -680,8 +879,14 @@ tk.Button(scrollable_frame, text="Generate Schedule", command=generate_schedule)
 # Bind events
 root.bind("<Configure>", on_resize)
 root.bind("<MouseWheel>", on_mousewheel)
+root.protocol("WM_DELETE_WINDOW", on_closing)
 
 # Global list for trees
 all_trees = []
 
+# Initial resize to ensure input tabs expand
+root.update_idletasks()
+adjust_column_widths()
+
+logging.info("Application started")
 root.mainloop()

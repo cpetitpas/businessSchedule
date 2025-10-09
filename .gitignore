@@ -1,3 +1,7 @@
 .venv/*
 dist/*
 build/*
+workforce_optimizer/*.log
+*.csv
+workforce_optimizer/*.csv
+workforce_optimizer/__pycache__/
