@@ -12,12 +12,16 @@ def solve_schedule(employees, days, shifts, areas, shift_prefs, day_prefs, must_
     
     # Create decision variables
     x = {}
+    y = {}
     for e in employees:
         x[e] = {}
+        y[e] = {}
         for w in range(num_weeks):
             x[e][w] = {}
+            y[e][w] = {}
             for d in days:
                 x[e][w][d] = {}
+                y[e][w][d] = pulp.LpVariable(f"y_{e}_w{w}_{d}", cat="Binary")
                 for s in shifts:
                     x[e][w][d][s] = {}
                     for a in work_areas[e]:
@@ -64,8 +68,7 @@ def solve_schedule(employees, days, shifts, areas, shift_prefs, day_prefs, must_
             delta = (datetime.strptime(date_str, "%Y-%m-%d").date() - start_date).days
             if 0 <= delta < 7 * num_weeks:
                 w = delta // 7
-                d_idx = delta % 7
-                d = days[d_idx]
+                d = days[delta % 7]
                 for s in shifts:
                     for a in work_areas[e]:
                         prob += x[e][w][d][s][a] == 0
@@ -100,24 +103,22 @@ def solve_schedule(employees, days, shifts, areas, shift_prefs, day_prefs, must_
         logging.debug("Added %d min shifts per week constraints", min_shifts_constraints)
     
     # Weekend shift constraints
-    schedule_days = [(w, d) for w in range(num_weeks) for d in days]
-    fri_sun_windows = []
-    for w in range(num_weeks):
-        if w < num_weeks - 1 or num_weeks == 1:
-            fri_sun_windows.append([(w, "Fri"), (w, "Sat"), (w, "Sun")])
-        else:
-            fri_sun_windows.append([(w, "Fri"), (w, "Sat")])
-    weekend_constraints = 0
-    for e in employees:
-        for window in fri_sun_windows:
-            prob += pulp.lpSum(
-                x[e][w][d][s][a]
-                for w, d in window
-                for s in shifts
-                for a in work_areas[e]
-            ) <= constraints["max_weekend_days"]
-            weekend_constraints += 1
-    logging.debug("Added %d weekend shift constraints", weekend_constraints)
+    if relax_weekend:
+        weekend_constraints = 0
+        for e in employees:
+            for w in range(num_weeks):
+                for d in days:
+                    prob += y[e][w][d] >= pulp.lpSum(x[e][w][d][s][a] for s in shifts for a in work_areas[e]) / (len(shifts) * len(work_areas[e]) or 1)
+        fri_sun_windows = []
+        for w in range(num_weeks - 1):
+            fri_sun_windows.append([(w, "Fri"), (w, "Sat"), (w + 1, "Sun")])
+        if num_weeks > 0:
+            fri_sun_windows.append([(num_weeks - 1, "Fri"), (num_weeks - 1, "Sat")])
+        for e in employees:
+            for window in fri_sun_windows:
+                prob += pulp.lpSum(y[e][w][d] for w, d in window) <= constraints["max_weekend_days"]
+                weekend_constraints += 1
+        logging.debug("Added %d weekend shift constraints", weekend_constraints)
     
     # Solve the problem
     start_time = time.time()
@@ -126,7 +127,11 @@ def solve_schedule(employees, days, shifts, areas, shift_prefs, day_prefs, must_
     solver_time = end_time - start_time
     logging.info("Solver status: %s, runtime: %.2f seconds", pulp.LpStatus[prob.status], solver_time)
     if prob.status == pulp.LpStatusOptimal:
-        logging.info("Objective value: %.2f", pulp.value(prob.objective))
+        obj_value = pulp.value(prob.objective)
+        if obj_value is not None:
+            logging.info("Objective value: %.2f", obj_value)
+        else:
+            logging.info("Objective value: None (problem not solved to optimality)")
         assigned_shifts = []
         for e in employees:
             for w in range(num_weeks):
@@ -145,28 +150,24 @@ def solve_schedule(employees, days, shifts, areas, shift_prefs, day_prefs, must_
 def validate_weekend_constraints(x, employees, days, shifts, work_areas, max_weekend_days, start_date, num_weeks):
     logging.debug("Entering validate_weekend_constraints")
     violations = []
-    schedule_days = [(w, d) for w in range(num_weeks) for d in days]
     fri_sun_windows = []
-    for w in range(num_weeks):
-        if w < num_weeks - 1 or num_weeks == 1:
-            fri_sun_windows.append([(w, "Fri"), (w, "Sat"), (w, "Sun")])
-        else:
-            fri_sun_windows.append([(w, "Fri"), (w, "Sat")])
+    for w in range(num_weeks - 1):
+        fri_sun_windows.append([(w, "Fri"), (w, "Sat"), (w + 1, "Sun")])
+    if num_weeks > 0:
+        fri_sun_windows.append([(num_weeks - 1, "Fri"), (num_weeks - 1, "Sat")])
     for e in employees:
         for i, window in enumerate(fri_sun_windows):
-            shift_count = sum(
-                pulp.value(x[e][w][d][s][a])
-                for w, d in window
-                for s in shifts
-                for a in work_areas[e]
-                if pulp.value(x[e][w][d][s][a]) is not None
-            )
-            if shift_count > max_weekend_days:
+            day_counts = 0
+            for w, d in window:
+                day_shift_count = sum(pulp.value(x[e][w][d][s][a]) for s in shifts for a in work_areas[e] if pulp.value(x[e][w][d][s][a]) is not None)
+                if day_shift_count > 0:
+                    day_counts += 1
+            if day_counts > max_weekend_days:
                 window_dates = " to ".join(
-                    f"{d}, {(start_date + timedelta(days=(w * 7 + days.index(d)))).strftime('%b %d, %y')}"
+                    f"{d}, {(start_date + timedelta(days=(w * 7 + DAYS.index(d)))).strftime('%b %d, %y')}"
                     for w, d in window
                 )
-                violations.append(f"{e} has {int(shift_count)} shifts in weekend period {window_dates}")
-                logging.warning("Weekend constraint violation: %s has %d shifts in %s", e, int(shift_count), window_dates)
+                violations.append(f"{e} has {int(day_counts)} days in weekend period {window_dates}")
+                logging.warning("Weekend constraint violation: %s has %d days in %s", e, int(day_counts), window_dates)
     logging.debug("Exiting validate_weekend_constraints with %d violations", len(violations))
     return violations

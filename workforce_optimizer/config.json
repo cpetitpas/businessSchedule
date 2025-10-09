@@ -1,6 +1,6 @@
 {
-    "emp_file": "C:/Users/chris/BusinessScheduleGen/Employee_Data.csv",
-    "req_file": "C:/Users/chris/BusinessScheduleGen/Personel_Required.csv",
-    "limits_file": "C:/Users/chris/BusinessScheduleGen/Hard_Limits.csv",
-    "window_geometry": "1956x1016+337+145"
+    "emp_file": "C:/Users/chris/BusinessScheduleGen/workforce_optimizer/Employee_Data.csv",
+    "req_file": "C:/Users/chris/BusinessScheduleGen/workforce_optimizer/Personel_Required.csv",
+    "limits_file": "C:/Users/chris/BusinessScheduleGen/workforce_optimizer/Hard_Limits.csv",
+    "window_geometry": "2212x1016+337+145"
 }

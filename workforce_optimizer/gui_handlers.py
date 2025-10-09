@@ -1,11 +1,11 @@
 import csv
 from datetime import datetime, timedelta
 import logging
+import pulp
 import pandas as pd
 from tkinter import messagebox
 import tkinter as tk
 from tkinter import ttk
-import pulp
 from data_loader import load_csv
 from solver import solve_schedule, validate_weekend_constraints
 from utils import calculate_min_employees, adjust_column_widths
@@ -100,9 +100,7 @@ def generate_schedule(emp_file_var, req_file_var, limits_file_var, start_date_en
         
         total_days = 7 * num_weeks
         dates = [(start_date + timedelta(days=i)) for i in range(total_days)]
-        start_weekday = start_date.weekday()
-        day_names = days[(start_weekday + 1) % 7:] + days[:(start_weekday + 1) % 7]
-        columns = [f"{day_names[i % 7]}, {d.strftime('%b %d, %y')}" for i, d in enumerate(dates)]
+        columns = [f"{d.strftime('%a')}, {d.strftime('%b %d, %y')}" for d in dates]
         
         bar_schedule = []
         kitchen_schedule = []
@@ -147,7 +145,8 @@ def generate_schedule(emp_file_var, req_file_var, limits_file_var, start_date_en
                 evening_row = ["Evening"] + [""] * 7
                 row_offset = w * 4 + 1  # Morning row for this week in schedule
                 for d_idx in range(7):
-                    day_name = day_names[d_idx]
+                    d = dates[w * 7 + d_idx]
+                    day_name = d.strftime('%a')
                     col_idx = d_idx + 1
                     for s_idx, s in enumerate(shifts):
                         assigned = [e for e in employees if a in work_areas[e] and pulp.value(x[e][w][day_name][s][a]) == 1]
@@ -174,8 +173,7 @@ def generate_schedule(emp_file_var, req_file_var, limits_file_var, start_date_en
             for row in kitchen_schedule:
                 if row:
                     writer.writerow(row)
-        logging.info("Kitchen_schedule saved to Kitchen_schedule_%s.csv", date_str)
-        
+        logging.info("Kitchen schedule saved to Kitchen_schedule_%s.csv", date_str)
     else:
         error_message = (
             f"No feasible schedule found even after relaxing all constraints.\n"
