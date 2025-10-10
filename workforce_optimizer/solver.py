@@ -4,7 +4,7 @@ import time
 from datetime import datetime, timedelta
 from constants import DAYS, SHIFTS
 
-def solve_schedule(employees, days, shifts, areas, shift_prefs, day_prefs, must_off, required, work_areas, constraints, min_shifts, max_shifts,
+def solve_schedule(employees, days, shifts, areas, shift_prefs, day_prefs, must_off, required, work_areas, constraints, min_shifts, max_shifts, max_weekend_days,
                   start_date, relax_day=True, relax_shift=True, relax_weekend=True, relax_min_shifts=True, num_weeks=2):
     logging.debug("Entering solve_schedule with relax_day=%s, relax_shift=%s, relax_weekend=%s, relax_min_shifts=%s, num_weeks=%d",
                   relax_day, relax_shift, relax_weekend, relax_min_shifts, num_weeks)
@@ -116,7 +116,7 @@ def solve_schedule(employees, days, shifts, areas, shift_prefs, day_prefs, must_
             fri_sun_windows.append([(num_weeks - 1, "Fri"), (num_weeks - 1, "Sat")])
         for e in employees:
             for window in fri_sun_windows:
-                prob += pulp.lpSum(y[e][w][d] for w, d in window) <= constraints["max_weekend_days"]
+                prob += pulp.lpSum(y[e][w][d] for w, d in window) <= max_weekend_days[e]
                 weekend_constraints += 1
         logging.debug("Added %d weekend shift constraints", weekend_constraints)
     
@@ -162,7 +162,7 @@ def validate_weekend_constraints(x, employees, days, shifts, work_areas, max_wee
                 day_shift_count = sum(pulp.value(x[e][w][d][s][a]) for s in shifts for a in work_areas[e] if pulp.value(x[e][w][d][s][a]) is not None)
                 if day_shift_count > 0:
                     day_counts += 1
-            if day_counts > max_weekend_days:
+            if day_counts > max_weekend_days[e]:
                 window_dates = " to ".join(
                     f"{d}, {(start_date + timedelta(days=(w * 7 + DAYS.index(d)))).strftime('%b %d, %y')}"
                     for w, d in window

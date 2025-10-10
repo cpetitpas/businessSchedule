@@ -39,10 +39,10 @@ def generate_schedule(emp_file_var, req_file_var, limits_file_var, start_date_en
         logging.error("load_csv returned None")
         return
     
-    employees, days, shifts, areas, shift_prefs, day_prefs, must_off, required, work_areas, constraints, min_shifts, max_shifts = data
+    employees, days, shifts, areas, shift_prefs, day_prefs, must_off, required, work_areas, constraints, min_shifts, max_shifts, max_weekend_days = data
     
     # Calculate current and needed employees
-    current, needed = calculate_min_employees(required, work_areas, employees, must_off, max_shifts, constraints["max_weekend_days"], start_date, num_weeks)
+    current, needed = calculate_min_employees(required, work_areas, employees, must_off, max_shifts, max_weekend_days, start_date, num_weeks)
     
     relax_map = {
         "Day Weights": "relax_day",
@@ -64,7 +64,7 @@ def generate_schedule(emp_file_var, req_file_var, limits_file_var, start_date_en
     for relax_day, relax_shift, relax_weekend, relax_min_shifts, msg in relax_order:
         logging.debug("Trying relaxation: %s", msg)
         prob, x = solve_schedule(employees, days, shifts, areas, shift_prefs, day_prefs, must_off, required, work_areas,
-                                 constraints, min_shifts, max_shifts, start_date, relax_day, relax_shift, relax_weekend, relax_min_shifts, num_weeks)
+                                 constraints, min_shifts, max_shifts, max_weekend_days, start_date, relax_day, relax_shift, relax_weekend, relax_min_shifts, num_weeks)
         if prob.status == pulp.LpStatusOptimal:
             relaxed_message = msg
             solution = prob
@@ -88,7 +88,7 @@ def generate_schedule(emp_file_var, req_file_var, limits_file_var, start_date_en
     
     date_str = datetime.now().strftime('%Y-%m-%d')
     if solution and solution.status == pulp.LpStatusOptimal:
-        violations = validate_weekend_constraints(x, employees, days, shifts, work_areas, constraints["max_weekend_days"], start_date, num_weeks)
+        violations = validate_weekend_constraints(x, employees, days, shifts, work_areas, max_weekend_days, start_date, num_weeks)
         violation_message = "\n".join(violations) if violations else "None"
         message = (
             f"Optimal schedule found! ({relaxed_message})\n"
@@ -118,6 +118,7 @@ def generate_schedule(emp_file_var, req_file_var, limits_file_var, start_date_en
                 ["Evening"] + [""] * len(week_cols),
                 []
             ])
+            
             # Create Treeview for Bar week
             tk.Label(bar_frame, text=f"Bar Schedule Week {w+1}").pack(pady=5)
             bar_tree = ttk.Treeview(bar_frame, columns=[f"Col{i}" for i in range(8)], show="headings", height=2)

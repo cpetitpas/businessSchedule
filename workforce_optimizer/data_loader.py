@@ -103,23 +103,15 @@ def load_csv(emp_file, req_file, limits_file, start_date, num_weeks_var):
                             logging.debug("Parsed date '%s' as %s for %s", date_str, off_date.strftime('%Y-%m-%d'), emp)
                             delta = (off_date - start_date).days
                             if 0 <= delta < 7 * num_weeks_var.get():
-                                day_name = off_date.strftime("%a")
-                                must_off[emp].append((day_name, off_date.strftime("%Y-%m-%d")))
-                            else:
-                                logging.warning("Must-have-off date %s for %s outside schedule, ignoring", off_date.strftime('%Y-%m-%d'), emp)
-                                print(f"Warning: Must-have-off date {off_date.strftime('%Y-%m-%d')} for {emp} outside schedule, ignoring")
-                        except Exception as e:
-                            logging.warning("Exception parsing date '%s' for %s: %s", date_str, emp, str(e))
+                                must_off[emp].append((delta % 7, off_date.strftime("%Y-%m-%d")))
+                        except Exception as parse_e:
+                            logging.warning("Failed to parse date '%s' for %s: %s", date_str, emp, str(parse_e))
                             invalid_dates.append(f"{emp}: {date_str}")
-        logging.debug("Must have off: %s", must_off)
-        
-        if invalid_dates:
-            messagebox.showwarning("Invalid Dates", "The following must-have-off dates are invalid and will be ignored:\n" + "\n".join(invalid_dates))
+            if invalid_dates:
+                messagebox.showwarning("Warning", "The following must-have-off dates are invalid and will be ignored:\n" + "\n".join(invalid_dates))
         
         min_shifts = {}
-        max_shifts = {}
         min_row = "min shifts per week"
-        max_row = "max shifts per week"
         if min_row not in emp_df.index:
             logging.warning("Cannot find 'Min Shifts per Week' row, assuming 0")
             print("Warning: Cannot find 'Min Shifts per Week' row, assuming 0")
@@ -130,6 +122,8 @@ def load_csv(emp_file, req_file, limits_file, start_date, num_weeks_var):
                 min_shifts[emp] = int(value) if pd.notna(value) else 0
         logging.debug("Min shifts per week: %s", min_shifts)
         
+        max_shifts = {}
+        max_row = "max shifts per week"
         if max_row not in emp_df.index:
             logging.warning("Cannot find 'Max Shifts per Week' row, assuming no limit")
             print("Warning: Cannot find 'Max Shifts per Week' row, assuming no limit")
@@ -139,6 +133,18 @@ def load_csv(emp_file, req_file, limits_file, start_date, num_weeks_var):
                 value = emp_df.loc[max_row, emp]
                 max_shifts[emp] = int(value) if pd.notna(value) else float("inf")
         logging.debug("Max shifts per week: %s", max_shifts)
+        
+        max_weekend_days = {}
+        weekend_row = "max number of weekend days"
+        if weekend_row not in emp_df.index:
+            logging.warning("Cannot find 'Max Number of Weekend Days' row, using default 1")
+            print("Warning: Cannot find 'Max Number of Weekend Days' row, using default 1")
+            max_weekend_days = {emp: 1 for emp in employees}
+        else:
+            for emp in employees:
+                value = emp_df.loc[weekend_row, emp]
+                max_weekend_days[emp] = int(value) if pd.notna(value) else 1
+        logging.debug("Max weekend days per employee: %s", max_weekend_days)
         
         req_df = pd.read_csv(req_file, index_col=0)
         req_df.index = req_df.index.astype(str).str.strip()
@@ -167,22 +173,10 @@ def load_csv(emp_file, req_file, limits_file, start_date, num_weeks_var):
             logging.error("Hard_Limits.csv is empty")
             raise ValueError("Hard_Limits.csv is empty")
         constraints = {
-            "max_weekend_days": 1,
             "max_shifts_per_day": 1,
             "violate_order": ["Day Weights", "Shift Weight", "Max Number of Weekend Days", "Min Shifts per Week"]
         }
         try:
-            if "Max Number of Weekend Days" in limits_df.columns:
-                value = limits_df["Max Number of Weekend Days"].iloc[0]
-                if pd.notna(value):
-                    constraints["max_weekend_days"] = int(value)
-                else:
-                    logging.warning("Max Number of Weekend Days is empty, using default (1)")
-                    print("Warning: Max Number of Weekend Days is empty, using default (1)")
-            else:
-                logging.warning("Max Number of Weekend Days column missing, using default (1)")
-                print("Warning: Max Number of Weekend Days column missing, using default (1)")
-                
             if "Max Number of Shifts per Day" in limits_df.columns:
                 value = limits_df["Max Number of Shifts per Day"].iloc[0]
                 if pd.notna(value):
@@ -210,7 +204,7 @@ def load_csv(emp_file, req_file, limits_file, start_date, num_weeks_var):
         logging.debug("Constraints: %s", constraints)
         
         logging.debug("Exiting load_csv")
-        return employees, days, ["Morning", "Evening"], areas, shift_prefs, day_prefs, must_off, required, work_areas, constraints, min_shifts, max_shifts
+        return employees, days, ["Morning", "Evening"], areas, shift_prefs, day_prefs, must_off, required, work_areas, constraints, min_shifts, max_shifts, max_weekend_days
     except Exception as e:
         logging.error("Failed to load CSV files: %s", str(e))
         messagebox.showerror("Error", f"Failed to load CSV files: {str(e)}")
