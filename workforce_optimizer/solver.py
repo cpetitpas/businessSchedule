@@ -159,7 +159,10 @@ def validate_weekend_constraints(x, employees, days, shifts, work_areas, max_wee
         for i, window in enumerate(fri_sun_windows):
             day_counts = 0
             for w, d in window:
-                day_shift_count = sum(pulp.value(x[e][w][d][s][a]) for s in shifts for a in work_areas[e] if pulp.value(x[e][w][d][s][a]) is not None)
+                day_shift_count = sum(
+                    (pulp.value(x[e][w][d][s][a]) if hasattr(x[e][w][d][s][a], 'value') else x[e][w][d][s][a])
+                    for s in shifts for a in work_areas[e]
+                )
                 if day_shift_count > 0:
                     day_counts += 1
             if day_counts > max_weekend_days[e]:

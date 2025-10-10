@@ -13,7 +13,124 @@ from constants import DAYS, SHIFTS, AREAS
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 
-def generate_schedule(emp_file_var, req_file_var, limits_file_var, start_date_entry, num_weeks_var, bar_frame, kitchen_frame, all_trees, summary_text, viz_frame):
+# Global variables for drag-and-drop
+all_listboxes = []
+floating_label = None
+
+def start_drag(event):
+    global floating_label
+    widget = event.widget
+    widget.dragged_item = widget.curselection()
+    if widget.dragged_item:
+        widget.dragged_item = widget.dragged_item[0]
+        widget.selected_item = widget.get(widget.dragged_item)
+        
+        floating_label = tk.Label(widget.master, text=widget.selected_item, bg="yellow", relief="solid")
+        
+        x_offset = widget.master.winfo_pointerx() - widget.master.winfo_rootx()
+        y_offset = widget.master.winfo_pointery() - widget.master.winfo_rooty()
+        floating_label.place(x=x_offset, y=y_offset)
+
+def on_drag(event):
+    global floating_label
+    if floating_label:
+        x_offset = event.widget.master.winfo_pointerx() - event.widget.master.winfo_rootx()
+        y_offset = event.widget.master.winfo_pointery() - event.widget.master.winfo_rooty()
+        floating_label.place(x=x_offset, y=y_offset)
+
+def on_drop(event):
+    global floating_label, all_listboxes
+    source = event.widget
+    target = None
+    
+    if floating_label:
+        floating_label.place_forget()
+    
+    # Find target listbox
+    for lst in all_listboxes:
+        if lst.winfo_containing(event.x_root, event.y_root) == lst:
+            target = lst
+            break
+    
+    if target and source != target and source.selected_item:
+        source.delete(source.dragged_item)
+        target.insert("end", source.selected_item)
+    
+    if floating_label:
+        floating_label.destroy()
+        floating_label = None
+
+def apply_changes(listboxes_dict, employees, num_weeks, areas, shifts, days, work_areas, max_weekend_days, start_date, dates, relaxed_message, employee_message, summary_text, viz_frame):
+    # Reconstruct x as dict with int values
+    x = {e: {w: {d: {s: {a: 0 for a in work_areas.get(e, [])} for s in shifts} for d in days} for w in range(num_weeks)} for e in employees}
+    
+    for w in range(num_weeks):
+        for a in areas:
+            for s in shifts:
+                for d_idx in range(7):
+                    lb = listboxes_dict[w][a][s][d_idx]
+                    emps = lb.get(0, 'end')
+                    day_name = dates[w * 7 + d_idx].strftime('%a')
+                    for e in emps:
+                        if e in x and a in x[e][w][day_name][s]:
+                            x[e][w][day_name][s][a] = 1
+    
+    violations = validate_weekend_constraints(x, employees, days, shifts, work_areas, max_weekend_days, start_date, num_weeks)
+    violation_message = "\n".join(violations) if violations else "None"
+    message = (
+        f"Schedule updated! ({relaxed_message})\n"
+        f"{employee_message}\n"
+        f"Weekend constraint violations:\n{violation_message}"
+    )
+    messagebox.showinfo("Success", message)
+    logging.info("Manual schedule update: %s", message)
+    
+    # Regenerate CSVs
+    date_str = datetime.now().strftime('%Y-%m-%d')
+    bar_schedule = []
+    kitchen_schedule = []
+    for w in range(num_weeks):
+        week_cols = [dates[w * 7 + i].strftime('%a, %b %d, %y') for i in range(7)]
+        bar_schedule.extend([
+            ["Day/Shift"] + week_cols,
+            ["Morning"] + [", ".join(listboxes_dict[w]['Bar']['Morning'][i].get(0, 'end')) for i in range(7)],
+            ["Evening"] + [", ".join(listboxes_dict[w]['Bar']['Evening'][i].get(0, 'end')) for i in range(7)],
+            []
+        ])
+        kitchen_schedule.extend([
+            ["Day/Shift"] + week_cols,
+            ["Morning"] + [", ".join(listboxes_dict[w]['Kitchen']['Morning'][i].get(0, 'end')) for i in range(7)],
+            ["Evening"] + [", ".join(listboxes_dict[w]['Kitchen']['Evening'][i].get(0, 'end')) for i in range(7)],
+            []
+        ])
+    
+    with open(f"Bar_schedule_{date_str}.csv", "w", newline="") as f:
+        writer = csv.writer(f)
+        for row in bar_schedule:
+            if row:
+                writer.writerow(row)
+    logging.info("Bar schedule saved to Bar_schedule_%s.csv", date_str)
+    
+    with open(f"Kitchen_schedule_{date_str}.csv", "w", newline="") as f:
+        writer = csv.writer(f)
+        for row in kitchen_schedule:
+            if row:
+                writer.writerow(row)
+    logging.info("Kitchen schedule saved to Kitchen_schedule_%s.csv", date_str)
+    
+    # Update summary report
+    summary_text.delete("1.0", tk.END)
+    summary = generate_summary(x, employees, num_weeks, days, shifts, work_areas, violations, relaxed_message, date_str)
+    summary_text.insert(tk.END, summary)
+    
+    # Update visualization
+    for widget in viz_frame.winfo_children():
+        widget.destroy()
+    generate_visualization(x, employees, num_weeks, days, shifts, work_areas, viz_frame)
+
+def generate_schedule(emp_file_var, req_file_var, limits_file_var, start_date_entry, num_weeks_var, bar_frame, kitchen_frame, all_listboxes_ref, summary_text, viz_frame):
+    global all_listboxes
+    all_listboxes = all_listboxes_ref  # Assign the passed reference to the global variable
     logging.debug("Entering generate_schedule")
     try:
         start_date = start_date_entry.get_date()
@@ -80,7 +197,7 @@ def generate_schedule(emp_file_var, req_file_var, limits_file_var, start_date_en
         widget.destroy()
     for widget in kitchen_frame.winfo_children():
         widget.destroy()
-    all_trees.clear()
+    all_listboxes.clear()
     
     # Clear summary and viz
     summary_text.delete("1.0", tk.END)
@@ -107,67 +224,69 @@ def generate_schedule(emp_file_var, req_file_var, limits_file_var, start_date_en
         
         total_days = 7 * num_weeks
         dates = [(start_date + timedelta(days=i)) for i in range(total_days)]
-        columns = [f"{d.strftime('%a')}, {d.strftime('%b %d, %y')}" for d in dates]
         
+        # Dict for listboxes: listboxes[w][a][s][d_idx] = lb
+        listboxes_dict = {w: {a: {s: [None] * 7 for s in shifts} for a in areas} for w in range(num_weeks)}
+        
+        for w in range(num_weeks):
+            week_cols = [d.strftime('%a, %b %d, %y') for d in dates[w * 7:(w + 1) * 7]]
+            
+            for a_idx, a in enumerate(areas):
+                frame = bar_frame if a == 'Bar' else kitchen_frame
+                tk.Label(frame, text=f"{a} Schedule Week {w+1}").pack(pady=5)
+                
+                # Day headers
+                day_frame = tk.Frame(frame)
+                tk.Label(day_frame, text="Shift/Day", width=10).pack(side='left')
+                for col in week_cols:
+                    tk.Label(day_frame, text=col, width=15).pack(side='left')
+                day_frame.pack()
+                
+                for s in shifts:
+                    shift_frame = tk.Frame(frame)
+                    tk.Label(shift_frame, text=s, width=10).pack(side='left')
+                    
+                    for d_idx in range(7):
+                        lb = tk.Listbox(shift_frame, height=3, width=15, selectmode='single')
+                        lb.pack(side='left')
+                        listboxes_dict[w][a][s][d_idx] = lb
+                        all_listboxes.append(lb)
+                        
+                        # Bind drag events
+                        lb.bind("<ButtonPress-1>", start_drag)
+                        lb.bind("<B1-Motion>", on_drag)
+                        lb.bind("<ButtonRelease-1>", on_drop)
+                        
+                        # Populate
+                        d = dates[w * 7 + d_idx]
+                        day_name = d.strftime('%a')
+                        assigned = [e for e in employees if a in work_areas[e] and pulp.value(x[e][w][day_name][s][a]) == 1]
+                        for e in assigned:
+                            lb.insert('end', e)
+                    
+                    shift_frame.pack(pady=5)
+        
+        # Add Apply Changes button
+        apply_button = tk.Button(bar_frame.master, text="Apply Changes", command=lambda: apply_changes(listboxes_dict, employees, num_weeks, areas, shifts, days, work_areas, max_weekend_days, start_date, dates, relaxed_message, employee_message, summary_text, viz_frame))
+        apply_button.pack(pady=10)
+        
+        # Generate initial CSVs as before
         bar_schedule = []
         kitchen_schedule = []
         for w in range(num_weeks):
-            week_cols = columns[w * 7:(w + 1) * 7]
+            week_cols = [dates[w * 7 + i].strftime('%a, %b %d, %y') for i in range(7)]
             bar_schedule.extend([
                 ["Day/Shift"] + week_cols,
-                ["Morning"] + [""] * len(week_cols),
-                ["Evening"] + [""] * len(week_cols),
+                ["Morning"] + [", ".join(listboxes_dict[w]['Bar']['Morning'][i].get(0, 'end')) for i in range(7)],
+                ["Evening"] + [", ".join(listboxes_dict[w]['Bar']['Evening'][i].get(0, 'end')) for i in range(7)],
                 []
             ])
             kitchen_schedule.extend([
                 ["Day/Shift"] + week_cols,
-                ["Morning"] + [""] * len(week_cols),
-                ["Evening"] + [""] * len(week_cols),
+                ["Morning"] + [", ".join(listboxes_dict[w]['Kitchen']['Morning'][i].get(0, 'end')) for i in range(7)],
+                ["Evening"] + [", ".join(listboxes_dict[w]['Kitchen']['Evening'][i].get(0, 'end')) for i in range(7)],
                 []
             ])
-            
-            # Create Treeview for Bar week
-            tk.Label(bar_frame, text=f"Bar Schedule Week {w+1}").pack(pady=5)
-            bar_tree = ttk.Treeview(bar_frame, columns=[f"Col{i}" for i in range(8)], show="headings", height=2)
-            bar_tree.heading("Col0", text="Day/Shift")
-            bar_tree.column("Col0", width=80, anchor="w")
-            for i in range(7):
-                text = week_cols[i] if i < len(week_cols) else ""
-                bar_tree.heading(f"Col{i+1}", text=text)
-                bar_tree.column(f"Col{i+1}", width=100, anchor="center")
-            all_trees.append(bar_tree)
-            # Create Treeview for Kitchen week
-            tk.Label(kitchen_frame, text=f"Kitchen Schedule Week {w+1}").pack(pady=5)
-            kitchen_tree = ttk.Treeview(kitchen_frame, columns=[f"Col{i}" for i in range(8)], show="headings", height=2)
-            kitchen_tree.heading("Col0", text="Day/Shift")
-            kitchen_tree.column("Col0", width=80, anchor="w")
-            for i in range(7):
-                text = week_cols[i] if i < len(week_cols) else ""
-                kitchen_tree.heading(f"Col{i+1}", text=text)
-                kitchen_tree.column(f"Col{i+1}", width=100, anchor="center")
-            all_trees.append(kitchen_tree)
-            
-            # Fill rows for this week
-            for a, tree, schedule in zip(areas, [bar_tree, kitchen_tree], [bar_schedule, kitchen_schedule]):
-                morning_row = ["Morning"] + [""] * 7
-                evening_row = ["Evening"] + [""] * 7
-                row_offset = w * 4 + 1  # Morning row for this week in schedule
-                for d_idx in range(7):
-                    d = dates[w * 7 + d_idx]
-                    day_name = d.strftime('%a')
-                    col_idx = d_idx + 1
-                    for s_idx, s in enumerate(shifts):
-                        assigned = [e for e in employees if a in work_areas[e] and pulp.value(x[e][w][day_name][s][a]) == 1]
-                        if s == "Morning":
-                            morning_row[col_idx] = ", ".join(assigned)
-                            schedule[row_offset][col_idx] = ", ".join(assigned)
-                        else:
-                            evening_row[col_idx] = ", ".join(assigned)
-                            schedule[row_offset + 1][col_idx] = ", ".join(assigned)
-                tree.insert("", "end", values=morning_row)
-                tree.insert("", "end", values=evening_row)
-                tree.pack(pady=5, fill="x")
-                logging.debug("Schedule for %s Week %d populated", a, w+1)
         
         with open(f"Bar_schedule_{date_str}.csv", "w", newline="") as f:
             writer = csv.writer(f)
@@ -212,7 +331,7 @@ def generate_summary(x, employees, num_weeks, days, shifts, work_areas, violatio
         for w in range(num_weeks):
             for d in days:
                 for s in shifts:
-                    for a in work_areas[e]:
+                    for a in work_areas.get(e, []):
                         if pulp.value(x[e][w][d][s][a]) == 1:
                             weekly_shifts[e][w] += 1
                             total_shifts[e] += 1
@@ -238,7 +357,7 @@ def generate_visualization(x, employees, num_weeks, days, shifts, work_areas, vi
         for w in range(num_weeks):
             for d in days:
                 for s in shifts:
-                    for a in work_areas[e]:
+                    for a in work_areas.get(e, []):
                         if pulp.value(x[e][w][d][s][a]) == 1:
                             total_shifts[e] += 1
     
@@ -255,7 +374,7 @@ def generate_visualization(x, employees, num_weeks, days, shifts, work_areas, vi
     canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
     plt.close(fig)  # Close the figure to free memory
 
-def display_input_data(emp_file_var, req_file_var, limits_file_var, emp_text, req_text, limits_text, notebook):
+def display_input_data(emp_file_var, req_file_var, limits_file_var, emp_text, req_text, limits_text, notebook, summary_text):
     logging.debug("Entering display_input_data")
     # Employee Data
     emp_file = emp_file_var.get()
@@ -292,6 +411,7 @@ def display_input_data(emp_file_var, req_file_var, limits_file_var, emp_text, re
         except Exception as e:
             limits_text.insert(tk.END, f"Error loading file: {str(e)}")
             logging.error("Error loading Hard Limits: %s", str(e))
+    
     from utils import adjust_column_widths
-    adjust_column_widths(tk._default_root, [], notebook, emp_text, req_text, limits_text)  # Ensure tabs resize after loading data
+    adjust_column_widths(tk._default_root, [], notebook, emp_text, req_text, limits_text, summary_text)  # Ensure tabs resize after loading data
     logging.debug("Exiting display_input_data")

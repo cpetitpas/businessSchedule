@@ -79,22 +79,18 @@ def calculate_min_employees(required, work_areas, employees, must_off, max_shift
     logging.debug("Exiting calculate_min_employees")
     return current, needed
 
-def adjust_column_widths(root, all_trees, notebook, emp_text, req_text, limits_text, summary_text):
+def adjust_column_widths(root, all_listboxes, notebook, emp_text, req_text, limits_text, summary_text):
     width = root.winfo_width()
-    for tree in all_trees:
-        cols = [c for c in tree["columns"] if c != "Col0"]
-        if cols:
-            col_width = max(100, (width - 80 - 40) // len(cols))  # Adjust for paddings and scrollbar
-            for c in cols:
-                tree.column(c, width=col_width)
+    for lb in all_listboxes:
+        lb.config(width=max(10, (width // 70)))  # Approximate, 7 days + shift label ~70 per col
     # Adjust input data tabs
     notebook.update_idletasks()
     for tab in [emp_text, req_text, limits_text, summary_text]:
         tab.configure(width=max(50, width // 10))  # Adjust text widget width
 
-def on_resize(event, root, all_trees, notebook, emp_text, req_text, limits_text, summary_text):
+def on_resize(event, root, all_listboxes, notebook, emp_text, req_text, limits_text, summary_text):
     if event.widget == root:
-        adjust_column_widths(root, all_trees, notebook, emp_text, req_text, limits_text, summary_text)
+        adjust_column_widths(root, all_listboxes, notebook, emp_text, req_text, limits_text, summary_text)
 
 def on_mousewheel(event, canvas):
     canvas.yview_scroll(-1 * (event.delta // 120), "units")

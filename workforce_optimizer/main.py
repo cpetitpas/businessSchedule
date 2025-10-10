@@ -44,7 +44,7 @@ req_file_var = tk.StringVar()
 limits_file_var = tk.StringVar()
 start_date_entry = None
 num_weeks_var = tk.IntVar(value=2)
-all_trees = []
+all_listboxes = []
 bar_frame = None
 kitchen_frame = None
 emp_text = None
@@ -87,7 +87,7 @@ def setup_gui():
     tk.Button(scrollable_frame, text="Browse", command=lambda: [limits_file_var.set(filedialog.askopenfilename(filetypes=[("CSV files", "*.csv")])), save_config(emp_file_var, req_file_var, limits_file_var, root)]).pack(pady=5)
 
     # View Input Data button
-    tk.Button(scrollable_frame, text="View Input Data", command=lambda: display_input_data(emp_file_var, req_file_var, limits_file_var, emp_text, req_text, limits_text, notebook)).pack(pady=5)
+    tk.Button(scrollable_frame, text="View Input Data", command=lambda: display_input_data(emp_file_var, req_file_var, limits_file_var, emp_text, req_text, limits_text, notebook, summary_text)).pack(pady=5)
 
     # Input data tabs
     notebook = ttk.Notebook(scrollable_frame)
@@ -152,17 +152,17 @@ def setup_gui():
     viz_frame.pack(pady=5, fill="both", expand=True)
 
     # Generate button
-    tk.Button(scrollable_frame, text="Generate Schedule", command=lambda: generate_schedule(emp_file_var, req_file_var, limits_file_var, start_date_entry, num_weeks_var, bar_frame, kitchen_frame, all_trees, summary_text, viz_frame)).pack(pady=10)
+    tk.Button(scrollable_frame, text="Generate Schedule", command=lambda: generate_schedule(emp_file_var, req_file_var, limits_file_var, start_date_entry, num_weeks_var, bar_frame, kitchen_frame, all_listboxes, summary_text, viz_frame)).pack(pady=10)
 
 # Main execution
 if __name__ == "__main__":
     from tkinter import filedialog
     setup_gui()
     load_config(root, emp_file_var, req_file_var, limits_file_var)
-    root.bind("<Configure>", lambda event: on_resize(event, root, all_trees, notebook, emp_text, req_text, limits_text, summary_text))
+    root.bind("<Configure>", lambda event: on_resize(event, root, all_listboxes, notebook, emp_text, req_text, limits_text, summary_text))
     root.bind("<MouseWheel>", lambda event: on_mousewheel(event, canvas))
     root.protocol("WM_DELETE_WINDOW", lambda: on_closing(emp_file_var, req_file_var, limits_file_var, root))
     root.update_idletasks()
-    adjust_column_widths(root, all_trees, notebook, emp_text, req_text, limits_text, summary_text)
+    adjust_column_widths(root, all_listboxes, notebook, emp_text, req_text, limits_text, summary_text)
     logging.info("Application started")
     root.mainloop()
