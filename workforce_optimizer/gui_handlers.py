@@ -10,8 +10,10 @@ from data_loader import load_csv
 from solver import solve_schedule, validate_weekend_constraints
 from utils import calculate_min_employees, adjust_column_widths
 from constants import DAYS, SHIFTS, AREAS
+import matplotlib.pyplot as plt
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 
-def generate_schedule(emp_file_var, req_file_var, limits_file_var, start_date_entry, num_weeks_var, bar_frame, kitchen_frame, all_trees):
+def generate_schedule(emp_file_var, req_file_var, limits_file_var, start_date_entry, num_weeks_var, bar_frame, kitchen_frame, all_trees, summary_text, viz_frame):
     logging.debug("Entering generate_schedule")
     try:
         start_date = start_date_entry.get_date()
@@ -79,6 +81,11 @@ def generate_schedule(emp_file_var, req_file_var, limits_file_var, start_date_en
     for widget in kitchen_frame.winfo_children():
         widget.destroy()
     all_trees.clear()
+    
+    # Clear summary and viz
+    summary_text.delete("1.0", tk.END)
+    for widget in viz_frame.winfo_children():
+        widget.destroy()
     
     employee_message = (
         f"Current Employees - Bar: {current['Bar']}, Kitchen: {current['Kitchen']}\n"
@@ -175,6 +182,14 @@ def generate_schedule(emp_file_var, req_file_var, limits_file_var, start_date_en
                 if row:
                     writer.writerow(row)
         logging.info("Kitchen schedule saved to Kitchen_schedule_%s.csv", date_str)
+        
+        # Generate summary report
+        summary = generate_summary(x, employees, num_weeks, days, shifts, work_areas, violations, relaxed_message, date_str)
+        summary_text.insert(tk.END, summary)
+        
+        # Generate visualization
+        generate_visualization(x, employees, num_weeks, days, shifts, work_areas, viz_frame)
+        
     else:
         error_message = (
             f"No feasible schedule found even after relaxing all constraints.\n"
@@ -185,6 +200,60 @@ def generate_schedule(emp_file_var, req_file_var, limits_file_var, start_date_en
         logging.error(error_message)
     
     logging.debug("Exiting generate_schedule")
+
+def generate_summary(x, employees, num_weeks, days, shifts, work_areas, violations, relaxed_message, date_str):
+    summary_lines = ["Summary Report\n"]
+    summary_lines.append(f"Relaxed Constraints: {relaxed_message}\n")
+    summary_lines.append("Weekend Violations:\n" + ("\n".join(violations) if violations else "None") + "\n")
+    
+    total_shifts = {e: 0 for e in employees}
+    weekly_shifts = {e: [0] * num_weeks for e in employees}
+    for e in employees:
+        for w in range(num_weeks):
+            for d in days:
+                for s in shifts:
+                    for a in work_areas[e]:
+                        if pulp.value(x[e][w][d][s][a]) == 1:
+                            weekly_shifts[e][w] += 1
+                            total_shifts[e] += 1
+    summary_lines.append("Total Shifts per Employee:\n")
+    for e, total in sorted(total_shifts.items(), key=lambda item: item[1], reverse=True):
+        summary_lines.append(f"{e}: {total}\n")
+    summary_lines.append("\nWeekly Shifts:\n")
+    for e in employees:
+        summary_lines.append(f"{e}: {weekly_shifts[e]}\n")
+    
+    summary_str = "".join(summary_lines)
+    with open(f"Summary_report_{date_str}.csv", "w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(["Employee", "Total Shifts"] + [f"Week {w+1}" for w in range(num_weeks)])
+        for e in employees:
+            writer.writerow([e, total_shifts[e]] + weekly_shifts[e])
+    logging.info("Summary report saved to Summary_report_%s.csv", date_str)
+    return summary_str
+
+def generate_visualization(x, employees, num_weeks, days, shifts, work_areas, viz_frame):
+    total_shifts = {e: 0 for e in employees}
+    for e in employees:
+        for w in range(num_weeks):
+            for d in days:
+                for s in shifts:
+                    for a in work_areas[e]:
+                        if pulp.value(x[e][w][d][s][a]) == 1:
+                            total_shifts[e] += 1
+    
+    fig, ax = plt.subplots(figsize=(10, 6))
+    ax.bar(total_shifts.keys(), total_shifts.values(), color='#1f77b4')
+    ax.set_xlabel("Employees")
+    ax.set_ylabel("Total Shifts")
+    ax.set_title("Total Shifts per Employee")
+    ax.tick_params(axis='x', rotation=45)
+    plt.tight_layout()
+    
+    canvas = FigureCanvasTkAgg(fig, master=viz_frame)
+    canvas.draw()
+    canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+    plt.close(fig)  # Close the figure to free memory
 
 def display_input_data(emp_file_var, req_file_var, limits_file_var, emp_text, req_text, limits_text, notebook):
     logging.debug("Entering display_input_data")

@@ -51,10 +51,12 @@ emp_text = None
 req_text = None
 limits_text = None
 notebook = None
+summary_text = None
+viz_frame = None
 
 # GUI setup
 def setup_gui():
-    global start_date_entry, bar_frame, kitchen_frame, emp_text, req_text, limits_text, notebook
+    global start_date_entry, bar_frame, kitchen_frame, emp_text, req_text, limits_text, notebook, summary_text, viz_frame
     from tkcalendar import DateEntry
     # Start date selection
     tk.Label(scrollable_frame, text="Select Start Date:").pack(pady=5)
@@ -124,6 +126,17 @@ def setup_gui():
     limits_yscroll.pack(side="right", fill="y")
     limits_text.pack(side="left", fill="both", expand=True)
 
+    # Summary report tab
+    summary_tab = tk.Frame(notebook)
+    notebook.add(summary_tab, text="Summary Report")
+    summary_text = tk.Text(summary_tab, wrap="none", height=10)
+    summary_yscroll = ttk.Scrollbar(summary_tab, orient="vertical", command=summary_text.yview)
+    summary_xscroll = ttk.Scrollbar(summary_tab, orient="horizontal", command=summary_text.xview)
+    summary_text.configure(yscrollcommand=summary_yscroll.set, xscrollcommand=summary_xscroll.set)
+    summary_xscroll.pack(side="bottom", fill="x")
+    summary_yscroll.pack(side="right", fill="y")
+    summary_text.pack(side="left", fill="both", expand=True)
+
     # Schedule display frames
     tk.Label(scrollable_frame, text="Bar Schedule").pack(pady=5)
     bar_frame = tk.Frame(scrollable_frame)
@@ -133,18 +146,23 @@ def setup_gui():
     kitchen_frame = tk.Frame(scrollable_frame)
     kitchen_frame.pack(pady=5, fill="x")
 
+    # Visualization frame
+    tk.Label(scrollable_frame, text="Visualizations").pack(pady=5)
+    viz_frame = tk.Frame(scrollable_frame)
+    viz_frame.pack(pady=5, fill="both", expand=True)
+
     # Generate button
-    tk.Button(scrollable_frame, text="Generate Schedule", command=lambda: generate_schedule(emp_file_var, req_file_var, limits_file_var, start_date_entry, num_weeks_var, bar_frame, kitchen_frame, all_trees)).pack(pady=10)
+    tk.Button(scrollable_frame, text="Generate Schedule", command=lambda: generate_schedule(emp_file_var, req_file_var, limits_file_var, start_date_entry, num_weeks_var, bar_frame, kitchen_frame, all_trees, summary_text, viz_frame)).pack(pady=10)
 
 # Main execution
 if __name__ == "__main__":
     from tkinter import filedialog
     setup_gui()
     load_config(root, emp_file_var, req_file_var, limits_file_var)
-    root.bind("<Configure>", lambda event: on_resize(event, root, all_trees, notebook, emp_text, req_text, limits_text))
+    root.bind("<Configure>", lambda event: on_resize(event, root, all_trees, notebook, emp_text, req_text, limits_text, summary_text))
     root.bind("<MouseWheel>", lambda event: on_mousewheel(event, canvas))
     root.protocol("WM_DELETE_WINDOW", lambda: on_closing(emp_file_var, req_file_var, limits_file_var, root))
     root.update_idletasks()
-    adjust_column_widths(root, all_trees, notebook, emp_text, req_text, limits_text)
+    adjust_column_widths(root, all_trees, notebook, emp_text, req_text, limits_text, summary_text)
     logging.info("Application started")
     root.mainloop()
