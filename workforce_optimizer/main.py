@@ -1,7 +1,7 @@
 import tkinter as tk
-from tkinter import ttk
+from tkinter import ttk, filedialog, messagebox
 from config import load_config, save_config, on_closing
-from gui_handlers import generate_schedule, display_input_data
+from gui_handlers import generate_schedule, display_input_data, parse_table_text_to_csv
 from utils import adjust_column_widths, on_resize, on_mousewheel
 from constants import DEFAULT_GEOMETRY
 import logging
@@ -45,18 +45,19 @@ limits_file_var = tk.StringVar()
 start_date_entry = None
 num_weeks_var = tk.IntVar(value=2)
 all_listboxes = []
+all_input_trees = []  # For Treeviews
 bar_frame = None
 kitchen_frame = None
-emp_text = None
-req_text = None
-limits_text = None
+emp_frame = None
+req_frame = None
+limits_frame = None
 notebook = None
 summary_text = None
 viz_frame = None
 
 # GUI setup
 def setup_gui():
-    global start_date_entry, bar_frame, kitchen_frame, emp_text, req_text, limits_text, notebook, summary_text, viz_frame
+    global start_date_entry, bar_frame, kitchen_frame, emp_frame, req_frame, limits_frame, notebook, summary_text, viz_frame
     from tkcalendar import DateEntry
     # Start date selection
     tk.Label(scrollable_frame, text="Select Start Date:").pack(pady=5)
@@ -74,8 +75,8 @@ def setup_gui():
     emp_entry.pack(pady=5)
     tk.Button(scrollable_frame, text="Browse", command=lambda: [emp_file_var.set(filedialog.askopenfilename(filetypes=[("CSV files", "*.csv")])), save_config(emp_file_var, req_file_var, limits_file_var, root)]).pack(pady=5)
 
-    # File selection for Personel Required
-    tk.Label(scrollable_frame, text="Select Personel Required CSV:").pack(pady=5)
+    # File selection for Personnel Required
+    tk.Label(scrollable_frame, text="Select Personnel Required CSV:").pack(pady=5)
     req_entry = tk.Entry(scrollable_frame, textvariable=req_file_var, width=50)
     req_entry.pack(pady=5)
     tk.Button(scrollable_frame, text="Browse", command=lambda: [req_file_var.set(filedialog.askopenfilename(filetypes=[("CSV files", "*.csv")])), save_config(emp_file_var, req_file_var, limits_file_var, root)]).pack(pady=5)
@@ -87,44 +88,26 @@ def setup_gui():
     tk.Button(scrollable_frame, text="Browse", command=lambda: [limits_file_var.set(filedialog.askopenfilename(filetypes=[("CSV files", "*.csv")])), save_config(emp_file_var, req_file_var, limits_file_var, root)]).pack(pady=5)
 
     # View Input Data button
-    tk.Button(scrollable_frame, text="View Input Data", command=lambda: display_input_data(emp_file_var, req_file_var, limits_file_var, emp_text, req_text, limits_text, notebook, summary_text)).pack(pady=5)
+    tk.Button(scrollable_frame, text="View Input Data", command=lambda: display_input_data(emp_file_var.get(), req_file_var.get(), limits_file_var.get(), emp_frame, req_frame, limits_frame)).pack(pady=5)
+
+    # Save Changes button
+    tk.Button(scrollable_frame, text="Save Changes", command=lambda: parse_table_text_to_csv(emp_file_var.get(), req_file_var.get(), limits_file_var.get(), emp_frame, req_frame, limits_frame)).pack(pady=5)
 
     # Input data tabs
     notebook = ttk.Notebook(scrollable_frame)
     notebook.pack(pady=10, fill="both", expand=True)
 
     # Employee Data tab
-    emp_tab = tk.Frame(notebook)
-    notebook.add(emp_tab, text="Employee Data")
-    emp_text = tk.Text(emp_tab, wrap="none", height=10)
-    emp_yscroll = ttk.Scrollbar(emp_tab, orient="vertical", command=emp_text.yview)
-    emp_xscroll = ttk.Scrollbar(emp_tab, orient="horizontal", command=emp_text.xview)
-    emp_text.configure(yscrollcommand=emp_yscroll.set, xscrollcommand=emp_xscroll.set)
-    emp_xscroll.pack(side="bottom", fill="x")
-    emp_yscroll.pack(side="right", fill="y")
-    emp_text.pack(side="left", fill="both", expand=True)
+    emp_frame = tk.Frame(notebook)
+    notebook.add(emp_frame, text="Employee Data")
 
-    # Personel Required tab
-    req_tab = tk.Frame(notebook)
-    notebook.add(req_tab, text="Personel Required")
-    req_text = tk.Text(req_tab, wrap="none", height=10)
-    req_yscroll = ttk.Scrollbar(req_tab, orient="vertical", command=req_text.yview)
-    req_xscroll = ttk.Scrollbar(req_tab, orient="horizontal", command=req_text.xview)
-    req_text.configure(yscrollcommand=req_yscroll.set, xscrollcommand=req_xscroll.set)
-    req_xscroll.pack(side="bottom", fill="x")
-    req_yscroll.pack(side="right", fill="y")
-    req_text.pack(side="left", fill="both", expand=True)
+    # Personnel Required tab
+    req_frame = tk.Frame(notebook)
+    notebook.add(req_frame, text="Personnel Required")
 
     # Hard Limits tab
-    limits_tab = tk.Frame(notebook)
-    notebook.add(limits_tab, text="Hard Limits")
-    limits_text = tk.Text(limits_tab, wrap="none", height=10)
-    limits_yscroll = ttk.Scrollbar(limits_tab, orient="vertical", command=limits_text.yview)
-    limits_xscroll = ttk.Scrollbar(limits_tab, orient="horizontal", command=limits_text.xview)
-    limits_text.configure(yscrollcommand=limits_yscroll.set, xscrollcommand=limits_xscroll.set)
-    limits_xscroll.pack(side="bottom", fill="x")
-    limits_yscroll.pack(side="right", fill="y")
-    limits_text.pack(side="left", fill="both", expand=True)
+    limits_frame = tk.Frame(notebook)
+    notebook.add(limits_frame, text="Hard Limits")
 
     # Summary report tab
     summary_tab = tk.Frame(notebook)
@@ -152,17 +135,16 @@ def setup_gui():
     viz_frame.pack(pady=5, fill="both", expand=True)
 
     # Generate button
-    tk.Button(scrollable_frame, text="Generate Schedule", command=lambda: generate_schedule(emp_file_var, req_file_var, limits_file_var, start_date_entry, num_weeks_var, bar_frame, kitchen_frame, all_listboxes, summary_text, viz_frame)).pack(pady=10)
+    tk.Button(scrollable_frame, text="Generate Schedule", command=lambda: generate_schedule(emp_file_var, req_file_var, limits_file_var, start_date_entry, num_weeks_var, bar_frame, kitchen_frame, all_listboxes, summary_text, viz_frame, emp_frame, req_frame, limits_frame)).pack(pady=10)
 
 # Main execution
 if __name__ == "__main__":
-    from tkinter import filedialog
     setup_gui()
     load_config(root, emp_file_var, req_file_var, limits_file_var)
-    root.bind("<Configure>", lambda event: on_resize(event, root, all_listboxes, notebook, emp_text, req_text, limits_text, summary_text))
+    root.bind("<Configure>", lambda event: on_resize(event, root, all_listboxes, all_input_trees, notebook, summary_text))
     root.bind("<MouseWheel>", lambda event: on_mousewheel(event, canvas))
     root.protocol("WM_DELETE_WINDOW", lambda: on_closing(emp_file_var, req_file_var, limits_file_var, root))
     root.update_idletasks()
-    adjust_column_widths(root, all_listboxes, notebook, emp_text, req_text, limits_text, summary_text)
+    adjust_column_widths(root, all_listboxes, all_input_trees, notebook, summary_text)
     logging.info("Application started")
     root.mainloop()

@@ -12,10 +12,11 @@ def calculate_min_employees(required, work_areas, employees, must_off, max_shift
     # Current employees
     current = {"Bar": 0, "Kitchen": 0}
     for emp in employees:
-        if "Bar" in work_areas[emp]:
-            current["Bar"] += 1
-        if "Kitchen" in work_areas[emp]:
-            current["Kitchen"] += 1
+        if emp in work_areas:
+            if "Bar" in work_areas[emp]:
+                current["Bar"] += 1
+            if "Kitchen" in work_areas[emp]:
+                current["Kitchen"] += 1
     logging.info("Current employees: Bar=%d, Kitchen=%d", current["Bar"], current["Kitchen"])
     
     # Total shifts per area
@@ -79,18 +80,40 @@ def calculate_min_employees(required, work_areas, employees, must_off, max_shift
     logging.debug("Exiting calculate_min_employees")
     return current, needed
 
-def adjust_column_widths(root, all_listboxes, notebook, emp_text, req_text, limits_text, summary_text):
+def adjust_column_widths(root, all_listboxes, all_input_trees, notebook, summary_text):
+    """
+    Adjust column widths for Treeview widgets based on window size.
+    """
     width = root.winfo_width()
-    for lb in all_listboxes:
-        lb.config(width=max(10, (width // 70)))  # Approximate, 7 days + shift label ~70 per col
-    # Adjust input data tabs
+    # Adjust Treeview widths (schedule display)
+    for tree in all_listboxes:
+        for col in tree["columns"]:
+            max_width = len(col) * 10  # Base width on header
+            for item in tree.get_children():
+                value = tree.set(item, col)
+                max_width = max(max_width, len(str(value)) * 10)
+            tree.column(col, width=max_width)
+    # Adjust input Treeview widths
+    for tree in all_input_trees:
+        for col in tree["columns"]:
+            max_width = len(col) * 10
+            for item in tree.get_children():
+                value = tree.set(item, col)
+                max_width = max(max_width, len(str(value)) * 10)
+            tree.column(col, width=max_width)
+    # Adjust summary text widget
     notebook.update_idletasks()
-    for tab in [emp_text, req_text, limits_text, summary_text]:
-        tab.configure(width=max(50, width // 10))  # Adjust text widget width
+    summary_text.configure(width=max(50, width // 10))
 
-def on_resize(event, root, all_listboxes, notebook, emp_text, req_text, limits_text, summary_text):
+def on_resize(event, root, all_listboxes, all_input_trees, notebook, summary_text):
+    """
+    Handle window resize event to adjust widget sizes.
+    """
     if event.widget == root:
-        adjust_column_widths(root, all_listboxes, notebook, emp_text, req_text, limits_text, summary_text)
+        adjust_column_widths(root, all_listboxes, all_input_trees, notebook, summary_text)
 
 def on_mousewheel(event, canvas):
+    """
+    Handle mouse wheel scrolling for the canvas.
+    """
     canvas.yview_scroll(-1 * (event.delta // 120), "units")
