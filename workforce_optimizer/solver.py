@@ -48,7 +48,7 @@ def solve_schedule(employees, days, shifts, areas, shift_prefs, day_prefs, must_
         for d in days:
             for s in shifts:
                 for a in areas:
-                    prob += pulp.lpSum(x[e][w][d][s][a] for e in employees if a in work_areas[e]) >= required[d][a][s]
+                    prob += pulp.lpSum(x[e][w][d][s][a] for e in employees if a in work_areas[e]) == required[d][a][s]
                     staffing_count += 1
     logging.debug("Added %d staffing requirement constraints", staffing_count)
     

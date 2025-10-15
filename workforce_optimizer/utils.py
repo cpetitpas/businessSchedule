@@ -3,107 +3,71 @@ from datetime import datetime, timedelta
 import logging
 import tkinter as tk
 from tkinter import ttk
+from constants import DAYS, SHIFTS
 
-def calculate_min_employees(required, work_areas, employees, must_off, max_shifts, max_weekend_days, start_date, num_weeks):
-    logging.debug("Entering calculate_min_employees")
-    areas = ["Bar", "Kitchen"]
-    days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
+def min_employees_to_avoid_weekend_violations(required, max_weekend_days, areas, num_weeks):
+    """
+    Calculate the minimum number of employees needed per area to avoid Max Number of Weekend Days violations,
+    assuming each employee can work up to the maximum allowed weekend days observed in the data.
+    """
+    max_possible = max(max_weekend_days.values()) if max_weekend_days else 2
+    fri_sun_windows = []
+    for w in range(num_weeks - 1):
+        fri_sun_windows.append([(w, "Fri"), (w, "Sat"), (w + 1, "Sun")])
+    if num_weeks > 0:
+        fri_sun_windows.append([(num_weeks - 1, "Fri"), (num_weeks - 1, "Sat")])
     
-    # Current employees
-    current = {"Bar": 0, "Kitchen": 0}
-    for emp in employees:
-        if emp in work_areas:
-            if "Bar" in work_areas[emp]:
-                current["Bar"] += 1
-            if "Kitchen" in work_areas[emp]:
-                current["Kitchen"] += 1
-    logging.info("Current employees: Bar=%d, Kitchen=%d", current["Bar"], current["Kitchen"])
-    
-    # Total shifts per area
-    total_shifts = {"Bar": 0, "Kitchen": 0}
-    for day in days:
-        for area in areas:
-            for shift in ["Morning", "Evening"]:
-                total_shifts[area] += required[day][area][shift] * num_weeks
-    logging.debug("Total shifts: Bar=%d, Kitchen=%d", total_shifts["Bar"], total_shifts["Kitchen"])
-    
-    # Weekend shifts
-    weekend_shifts = {"Bar": 0, "Kitchen": 0}
-    for week in range(num_weeks):
-        if week < num_weeks - 1 or num_weeks == 1:
-            for day in ["Fri", "Sat", "Sun"]:
-                for area in areas:
-                    for shift in ["Morning", "Evening"]:
-                        weekend_shifts[area] += required[day][area][shift]
-        else:
-            for day in ["Fri", "Sat"]:
-                for area in areas:
-                    for shift in ["Morning", "Evening"]:
-                        weekend_shifts[area] += required[day][area][shift]
-    logging.debug("Weekend shifts: Bar=%d, Kitchen=%d", weekend_shifts["Bar"], weekend_shifts["Kitchen"])
-    
-    # Adjust for must-have-off within the schedule period
-    unavailable_shifts = {"Bar": 0, "Kitchen": 0}
-    for emp in must_off:
-        for _, date_str in must_off[emp]:
-            try:
-                off_date = datetime.strptime(date_str, "%Y-%m-%d").date()
-                delta = (off_date - start_date).days
-                if 0 <= delta < 7 * num_weeks:
-                    for area in work_areas[emp]:
-                        unavailable_shifts[area] += 1
-            except:
-                logging.warning("Invalid must-off date for %s: %s", emp, date_str)
-                continue
-    logging.debug("Unavailable shifts due to must-off: Bar=%d, Kitchen=%d", unavailable_shifts["Bar"], unavailable_shifts["Kitchen"])
-    
-    # Minimum employees needed (using area-specific averages)
-    needed = {"Bar": 0, "Kitchen": 0}
+    min_per_area = {}
     for area in areas:
-        area_employees = [e for e in employees if area in work_areas[e]]
-        num_area_employees = len(area_employees)
-        if num_area_employees == 0:
-            needed[area] = float('inf')  # Impossible if no employees
-            continue
-        
-        avg_max_shifts = sum(max_shifts[e] for e in area_employees) / num_area_employees
-        avg_max_weekend = sum(max_weekend_days[e] for e in area_employees) / num_area_employees
-        
-        shifts_needed = total_shifts[area] + unavailable_shifts[area]
-        employees_by_total = math.ceil(shifts_needed / (avg_max_shifts * num_weeks)) if avg_max_shifts > 0 else float('inf')
-        employees_by_weekend = math.ceil(weekend_shifts[area] / (avg_max_weekend * num_weeks)) if avg_max_weekend > 0 else float('inf')
-        needed[area] = max(employees_by_total, employees_by_weekend)
-        if area == "Bar" and num_weeks == 2:
-            needed[area] = max(needed[area], 6)
-    logging.info("Minimum employees needed: Bar=%d, Kitchen=%d", needed["Bar"], needed["Kitchen"])
-    
-    logging.debug("Exiting calculate_min_employees")
-    return current, needed
+        min_n = 0
+        for window in fri_sun_windows:
+            total_shifts = 0
+            for w, d in window:
+                for s in SHIFTS:
+                    total_shifts += required[d][area][s]
+            min_for_window = math.ceil(total_shifts / max_possible)
+            min_n = max(min_n, min_for_window)
+        min_per_area[area] = min_n
+    return min_per_area
 
 def adjust_column_widths(root, all_listboxes, all_input_trees, notebook, summary_text):
     """
-    Adjust column widths for Treeview widgets based on window size.
+    Adjust column widths for Treeview widgets and summary text width based on window size.
     """
     width = root.winfo_width()
-    # Adjust Treeview widths (schedule display)
     for tree in all_listboxes:
+        total_content_width = 0
         for col in tree["columns"]:
-            max_width = len(col) * 10  # Base width on header
+            max_width = max(len(col) * 10, 100)
             for item in tree.get_children():
                 value = tree.set(item, col)
-                max_width = max(max_width, len(str(value)) * 10)
-            tree.column(col, width=max_width)
-    # Adjust input Treeview widths
+                max_width = max(max_width, len(str(value)) * 8)
+            tree.column(col, width=max_width, minwidth=100, stretch=1)
+            total_content_width += max_width
+        tree_frame = tree.master
+        hsb = tree_frame.children.get('!scrollbar2')
+        if hsb and total_content_width > width - 50:
+            hsb.grid()
+        elif hsb:
+            hsb.grid_remove()
     for tree in all_input_trees:
+        total_content_width = 0
         for col in tree["columns"]:
-            max_width = len(col) * 10
+            max_width = max(len(col) * 10, 100)
             for item in tree.get_children():
                 value = tree.set(item, col)
-                max_width = max(max_width, len(str(value)) * 10)
-            tree.column(col, width=max_width)
-    # Adjust summary text widget
+                max_width = max(max_width, len(str(value)) * 8)
+            tree.column(col, width=max_width, minwidth=100, stretch=1)
+            total_content_width += max_width
+        tree_frame = tree.master
+        hsb = tree_frame.children.get('!scrollbar2')
+        if hsb and total_content_width > width - 50:
+            hsb.grid()
+        elif hsb:
+            hsb.grid_remove()
     notebook.update_idletasks()
-    summary_text.configure(width=max(50, width // 10))
+    char_width = max(50, (width - 30) // 10)
+    summary_text.configure(width=char_width)
 
 def on_resize(event, root, all_listboxes, all_input_trees, notebook, summary_text):
     """
