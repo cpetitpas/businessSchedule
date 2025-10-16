@@ -453,17 +453,19 @@ def generate_schedule(emp_file_var, req_file_var, limits_file_var, start_date_en
         for w in range(num_weeks):
             week_frame = tk.Frame(area_frame)
             week_frame.pack(pady=5, fill="both", expand=True)
-            week_frame.columnconfigure(0, weight=1)
-            tk.Label(week_frame, text=f"{area} Schedule - Week {w + 1} ({week_start.strftime('%b %d, %Y')})").grid(row=0, column=0, columnspan=2, pady=(0,5))
+            tk.Label(week_frame, text=f"{area} Schedule - Week {w + 1} ({week_start.strftime('%b %d, %Y')})").pack()
 
-            tree = ttk.Treeview(week_frame, show="headings", height=2)
-            tree_vsb = ttk.Scrollbar(week_frame, orient="vertical", command=tree.yview)
-            tree_hsb = ttk.Scrollbar(week_frame, orient="horizontal", command=tree.xview)
+            # Create a frame to hold Treeview and scrollbars
+            tree_frame = tk.Frame(week_frame)
+            tree_frame.pack(fill="both", expand=True)
+
+            tree = ttk.Treeview(tree_frame, show="headings", height=2)
+            tree_vsb = ttk.Scrollbar(tree_frame, orient="vertical", command=tree.yview)
+            tree_hsb = ttk.Scrollbar(tree_frame, orient="horizontal", command=tree.xview)
             tree.configure(yscrollcommand=tree_vsb.set, xscrollcommand=tree_hsb.set)
-            tree.grid(row=1, column=0, sticky="nsew")
-            tree_vsb.grid(row=1, column=1, sticky="ns")
-            tree_hsb.grid(row=2, column=0, sticky="ew")
-            week_frame.rowconfigure(1, weight=1)
+            tree.pack(side="left", fill="both", expand=True)
+            tree_vsb.pack(side="right", fill="y")
+            tree_hsb.pack(side="bottom", fill="x")
 
             # Define columns
             columns = ["Day/Shift"] + [day for day in days]
@@ -496,6 +498,7 @@ def generate_schedule(emp_file_var, req_file_var, limits_file_var, start_date_en
                 for s in shifts:
                     row = {"Day/Shift": f"Week {w+1} {s}"}
                     for d in days:
+                        date = start_date + datetime.timedelta(days=(w * 7 + days.index(d)))
                         employees = ", ".join(sorted(weekly_assignments[area][w][s][d]))
                         row[d] = employees
                     schedule_data.append(row)
@@ -530,53 +533,53 @@ def generate_schedule(emp_file_var, req_file_var, limits_file_var, start_date_en
     summary_text.insert(tk.END, f"{'Employee':<20} {'Total':<8} {'Weeks':<20}\n")
     summary_text.insert(tk.END, "-" * 48 + "\n")
     for index, row in summary_df.iterrows():
+        week_str = ", ".join(str(int(row[f'Week {i+1}'])) for i in range(num_weeks))
+        summary_text.insert(tk.END, f"{row['Employee']:<20} {int(row['Total Shifts']):<8} {week_str}\n")
+    summary_text.insert(tk.END, f"\n{'Overall Total Shifts':<20} {overall_total_shifts}\n\n")
+
+    try:
+        for child in viz_frame.winfo_children():
+            child.destroy()
+        
+        fig_width = max(10, len(employees_sorted) * 0.5)
+        fig, axs = plt.subplots(1, 2, figsize=(fig_width + 5, 6), gridspec_kw={'width_ratios': [3, 1]})
+        
+        colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728']
+        week_data = {f'Week {i+1}': [] for i in range(num_weeks)}
         for _, row in summary_df.iterrows():
-            week_str = ", ".join(str(int(row[f'Week {i+1}'])) for i in range(num_weeks))
-            summary_text.insert(tk.END, f"{row['Employee']:<20} {int(row['Total Shifts']):<8} {week_str}\n")
-
-        try:
-            for child in viz_frame.winfo_children():
-                child.destroy()
-
-            fig_width = max(10, len(employees_sorted) * 0.5)
-            fig, axs = plt.subplots(1, 2, figsize=(fig_width + 5, 6), gridspec_kw={'width_ratios': [3, 1]})
-
-            colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728']
-            week_data = {f'Week {i+1}': [] for i in range(num_weeks)}
-            week_data = {f'Week {i+1}': [] for i in range(num_weeks)}
-            for _, row in summary_df.iterrows():
-                for i in range(num_weeks):
-                    week_data[f'Week {i+1}'].append(row[f'Week {i+1}'])
-            bottom = np.zeros(len(employees_sorted))
-            for i, (week, data) in enumerate(week_data.items()):
-                axs[0].bar(employees_sorted, data, label=week, bottom=bottom, color=colors[i % len(colors)])
-                bottom += np.array(data)
-
-            axs[0].set_xlabel('Employees')
-            axs[0].set_ylabel('Shifts')
-            axs[0].set_title('Shifts per Employee (Stacked by Week)')
-            axs[0].legend()
-            axs[0].tick_params(axis='x', rotation=45, labelsize=8)
-
-            total_per_week = [sum(week_data[week]) for week in week_data]
-            axs[1].bar(week_data.keys(), total_per_week, color=colors[:len(week_data)])
-            axs[1].set_xlabel('Weeks')
-            axs[1].set_ylabel('Total Shifts')
-            axs[1].set_title('Total Shifts per Week')
-            axs[1].tick_params(axis='x', rotation=45)
-
-            plt.tight_layout()
-
-            viz_canvas = FigureCanvasTkAgg(fig, master=viz_frame)
-            viz_canvas.draw()
-            viz_canvas.get_tk_widget().pack(fill='both', expand=True)
-
-            # Store the figure to close it later
-            viz_frame.figure = fig  # Attach figure to viz_frame for cleanup
-        except Exception as e:
-            messagebox.showerror("Error", f"Failed to create visualization: {e}")
-            tk.Label(viz_frame, text="Visualization failed.").pack()
-            plt.close('all')  # Close any figures in case of error
+            for i in range(num_weeks):
+                week_data[f'Week {i+1}'].append(row[f'Week {i+1}'])
+        
+        bottom = np.zeros(len(employees_sorted))
+        for i, (week, data) in enumerate(week_data.items()):
+            axs[0].bar(employees_sorted, data, label=week, bottom=bottom, color=colors[i % len(colors)])
+            bottom += np.array(data)
+        
+        axs[0].set_xlabel('Employees')
+        axs[0].set_ylabel('Shifts')
+        axs[0].set_title('Shifts per Employee (Stacked by Week)')
+        axs[0].legend()
+        axs[0].tick_params(axis='x', rotation=45, labelsize=8)
+        
+        total_per_week = [sum(week_data[week]) for week in week_data]
+        axs[1].bar(week_data.keys(), total_per_week, color=colors[:len(week_data)])
+        axs[1].set_xlabel('Weeks')
+        axs[1].set_ylabel('Total Shifts')
+        axs[1].set_title('Total Shifts per Week')
+        axs[1].tick_params(axis='x', rotation=45)
+        
+        plt.tight_layout()
+        
+        viz_canvas = FigureCanvasTkAgg(fig, master=viz_frame)
+        viz_canvas.draw()
+        viz_canvas.get_tk_widget().pack(fill='both', expand=True)
+        
+        # Store the figure to close it later
+        viz_frame.figure = fig  # Attach figure to viz_frame for cleanup
+    except Exception as e:
+        messagebox.showerror("Error", f"Failed to create visualization: {e}")
+        tk.Label(viz_frame, text="Visualization failed.").pack()
+        plt.close('all')  # Close any figures in case of error
 
     adjust_column_widths(root, all_listboxes, all_input_trees, notebook, summary_text)
 
