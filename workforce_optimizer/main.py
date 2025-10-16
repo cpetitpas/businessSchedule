@@ -1,7 +1,7 @@
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
-from config import load_config, save_config, on_closing
-from gui_handlers import generate_schedule, display_input_data, parse_table_text_to_csv
+from config import load_config, on_closing
+from gui_handlers import generate_schedule, display_input_data, save_input_data
 from utils import adjust_column_widths, on_resize, on_mousewheel
 from constants import DEFAULT_GEOMETRY
 import logging
@@ -91,6 +91,9 @@ def setup_gui():
 
     # View Input Data button
     tk.Button(scrollable_frame, text="View Input Data", command=lambda: display_input_data(emp_file_var.get(), req_file_var.get(), limits_file_var.get(), emp_frame, req_frame, limits_frame, root, notebook, summary_text)).pack(pady=5)
+
+    # Save Input Data button
+    tk.Button(scrollable_frame, text="Save Input Data", command=lambda: save_input_data(emp_file_var.get(), req_file_var.get(), limits_file_var.get(), emp_frame, req_frame, limits_frame)).pack(pady=5)
 
     # Input data tabs
     notebook = ttk.Notebook(scrollable_frame)
