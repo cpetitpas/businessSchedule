@@ -375,6 +375,8 @@ def generate_schedule(emp_file_var, req_file_var, limits_file_var, start_date_en
     """
     start_date = start_date_entry.get_date()
     num_weeks = num_weeks_var.get()
+    all_listboxes.clear()  # Clear previous listboxes
+    all_input_trees.clear()  # Clear previous input trees
     if num_weeks < 1:
         messagebox.showerror("Error", "Number of weeks must be at least 1")
         return
