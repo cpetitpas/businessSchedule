@@ -1,7 +1,7 @@
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 from config import load_config, on_closing
-from gui_handlers import generate_schedule, display_input_data, save_input_data
+from gui_handlers import generate_schedule, display_input_data, save_input_data, save_schedule_changes
 from utils import adjust_column_widths, on_resize, on_mousewheel
 from constants import DEFAULT_GEOMETRY
 import logging
@@ -152,7 +152,10 @@ def setup_gui():
     viz_frame.pack(pady=5, fill="both", expand=True)
 
     # Generate button
-    tk.Button(scrollable_frame, text="Generate Schedule", command=lambda: generate_schedule(emp_file_var, req_file_var, limits_file_var, start_date_entry, num_weeks_var, bar_frame, kitchen_frame, summary_text, viz_frame, root, notebook)).pack(pady=10)
+    tk.Button(scrollable_frame, text="Generate Schedule", command=lambda: generate_schedule(emp_file_var.get(), req_file_var.get(), limits_file_var.get(), start_date_entry, num_weeks_var, bar_frame, kitchen_frame, summary_text, viz_frame, root, notebook)).pack(pady=10)
+
+    # Save Schedule Changes button
+    tk.Button(scrollable_frame, text="Save Schedule Changes", command=lambda: save_schedule_changes(bar_frame, kitchen_frame, start_date_entry.get_date(), root)).pack(pady=10)
 
 # Main execution
 if __name__ == "__main__":

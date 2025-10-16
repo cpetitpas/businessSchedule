@@ -1,5 +1,5 @@
 import tkinter as tk
-from tkinter import ttk, messagebox
+from tkinter import ttk, messagebox, filedialog
 import pandas as pd
 import datetime
 from tkcalendar import Calendar
@@ -18,12 +18,24 @@ from utils import min_employees_to_avoid_weekend_violations, adjust_column_width
 all_input_trees = []
 all_listboxes = []
 
+def find_treeviews(widget):
+    """
+    Recursively find all ttk.Treeview widgets in the widget and its descendants.
+    """
+    treeviews = []
+    for child in widget.winfo_children():
+        if isinstance(child, ttk.Treeview):
+            treeviews.append(child)
+        else:
+            treeviews.extend(find_treeviews(child))
+    return treeviews
+
 def display_input_data(emp_path, req_path, limits_path, emp_frame, req_frame, limits_frame, root, notebook, summary_text):
     """
     Load CSV files into Treeview widgets for all input tabs (Employee Data, Personnel Required, Hard Limits).
     """
-    global all_input_trees, all_listboxes  # Declare globals at the start
-    all_input_trees = []  # Reset the global list
+    global all_input_trees, all_listboxes
+    all_input_trees = []
 
     def create_treeview(frame, csv_file, has_index=True):
         for widget in frame.winfo_children():
@@ -35,11 +47,9 @@ def display_input_data(emp_path, req_path, limits_path, emp_frame, req_frame, li
             messagebox.showerror("Error", f"Failed to load {csv_file}: {e}")
             return None
 
-        # Configure parent frame for expansion
         frame.rowconfigure(0, weight=1)
         frame.columnconfigure(0, weight=1)
 
-        # Create Treeview with scrollbars
         tree_frame = ttk.Frame(frame)
         tree_frame.grid(row=0, column=0, sticky="nsew")
         tree = ttk.Treeview(tree_frame, show="headings")
@@ -53,19 +63,17 @@ def display_input_data(emp_path, req_path, limits_path, emp_frame, req_frame, li
         tree_frame.columnconfigure(0, weight=1)
         all_input_trees.append(tree)
 
-        # Bind mouse wheel for vertical scrolling anywhere in the widget
         def _on_mousewheel(event):
             if event.delta:
                 tree.yview_scroll(int(-1 * (event.delta / 120)), "units")
-            elif event.num == 4:  # Linux scroll up
+            elif event.num == 4:
                 tree.yview_scroll(-1, "units")
-            elif event.num == 5:  # Linux scroll down
+            elif event.num == 5:
                 tree.yview_scroll(1, "units")
-        tree.bind("<MouseWheel>", _on_mousewheel)  # Windows and Mac
-        tree.bind("<Button-4>", _on_mousewheel)    # Linux scroll up
-        tree.bind("<Button-5>", _on_mousewheel)    # Linux scroll down
+        tree.bind("<MouseWheel>", _on_mousewheel)
+        tree.bind("<Button-4>", _on_mousewheel)
+        tree.bind("<Button-5>", _on_mousewheel)
 
-        # Set up columns
         columns = list(df.columns)
         if has_index:
             index_name = df.index.name or "Index"
@@ -76,14 +84,12 @@ def display_input_data(emp_path, req_path, limits_path, emp_frame, req_frame, li
             tree.heading(col, text=col)
             tree.column(col, anchor="center", width=100)
 
-        # Insert data
         for idx, row in df.iterrows():
             values = ['' if pd.isna(val) else str(val) for val in row]
             if has_index:
                 values = [str(idx)] + values
             tree.insert("", "end", iid=str(idx) if has_index else f"row_{idx}", values=values)
 
-        # Bind double-click event
         tree.bind("<Double-1>", lambda event: on_tree_double_click(tree, event, has_index))
         return tree
 
@@ -113,7 +119,6 @@ def save_input_data(emp_path, req_path, limits_path, emp_frame, req_frame, limit
         return pd.DataFrame(data, columns=columns)
 
     try:
-        # Save Employee Data
         emp_tree = next((w for w in emp_frame.winfo_children()[0].winfo_children() if isinstance(w, ttk.Treeview)), None)
         if emp_tree:
             emp_df = tree_to_df(emp_tree, has_index=True)
@@ -121,7 +126,6 @@ def save_input_data(emp_path, req_path, limits_path, emp_frame, req_frame, limit
             emp_df.to_csv(emp_path)
             logging.info(f"Saved Employee Data to {emp_path}")
 
-        # Save Personnel Required
         req_tree = next((w for w in req_frame.winfo_children()[0].winfo_children() if isinstance(w, ttk.Treeview)), None)
         if req_tree:
             req_df = tree_to_df(req_tree, has_index=True)
@@ -129,7 +133,6 @@ def save_input_data(emp_path, req_path, limits_path, emp_frame, req_frame, limit
             req_df.to_csv(req_path)
             logging.info(f"Saved Personnel Required to {req_path}")
 
-        # Save Hard Limits
         limits_tree = next((w for w in limits_frame.winfo_children()[0].winfo_children() if isinstance(w, ttk.Treeview)), None)
         if limits_tree:
             limits_df = tree_to_df(limits_tree, has_index=False)
@@ -154,436 +157,360 @@ def on_tree_double_click(tree, event, has_index):
     col_name = tree["columns"][col_idx]
     row_id = item if has_index else tree.index(item)
 
-    # Get current value
     current_value = tree.set(item, col_name)
-    if pd.isna(current_value) or current_value == "NaN":
-        current_value = ""
 
-    # Open date picker for "Must have off" row (Employee Data only)
-    if has_index and "must have off" in row_id.lower():
-        open_date_picker_dialog(tree, item, col_name, current_value)
-    else:
-        # Open entry dialog with validation
-        open_entry_dialog(tree, item, col_name, current_value, row_id)
-    pass
-
-def open_entry_dialog(tree, item, col_name, current_value, row_id):
-    """
-    Open a simple entry dialog for editing non-date cells with validation.
-    The dialog appears at the cursor position.
-    """
-    dialog = tk.Toplevel()
-    dialog.title("Edit Cell")
-    dialog.geometry("300x100")
-
-    # Place dialog at cursor position
-    try:
-        x = tree.winfo_pointerx()
-        y = tree.winfo_pointery()
-        dialog.geometry(f"+{x}+{y}")
-    except Exception:
-        pass  # Fallback to default if unable to get pointer position
-
-    tk.Label(dialog, text=f"Edit {col_name} for {row_id}").pack(pady=5)
-    entry = tk.Entry(dialog)
+    entry = tk.Entry(tree)
     entry.insert(0, current_value)
-    entry.pack(pady=5)
-
-    def save():
+    entry.bind("<Return>", lambda e: update_cell())
+    entry.bind("<FocusOut>", lambda e: update_cell())
+    
+    def update_cell():
         new_value = entry.get()
-        # Validate numeric fields
-        if any(keyword in row_id.lower() for keyword in ["shifts", "weekend"]):
-            if new_value:
-                try:
-                    float(new_value)
-                except ValueError:
-                    messagebox.showerror("Error", f"{row_id} must be a number")
-                    return
-        # Validate shift preferences
-        if row_id.lower() == "shift weight" and new_value:
-            if new_value.lower() not in ["morning", "evening", ""]:
-                messagebox.showerror("Error", f"Shift Weight must be 'Morning', 'Evening', or empty")
-                return
-        # Validate day preferences
-        if row_id.lower() == "day weights" and new_value:
-            days = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"]
-            if new_value:
-                input_days = [d.strip().lower() for d in new_value.split(",")]
-                invalid_days = [d for d in input_days if d and d not in days]
-                if invalid_days:
-                    messagebox.showerror("Error", f"Invalid days in Day Weights: {invalid_days}")
-                    return
-        # Validate work area
-        if row_id.lower() == "work area" and new_value:
-            if new_value not in ["Bar", "Kitchen", ""]:
-                messagebox.showerror("Error", f"Work Area must be 'Bar', 'Kitchen', or empty")
-                return
         tree.set(item, col_name, new_value)
-        dialog.destroy()
+        entry.destroy()
 
-    tk.Button(dialog, text="Save", command=save).pack(pady=5)
-    dialog.transient(tree.winfo_toplevel())
-    dialog.grab_set()
+    x, y, width, height = tree.bbox(item, column)
+    entry.place(x=x, y=y, width=width, height=height)
+    entry.focus_set()
 
-def open_date_picker_dialog(tree, item, col_name, current_value):
+def edit_schedule_cell(tree, event, area, emp_file_path):
     """
-    Open a date picker dialog for editing 'Must have off' dates.
-    The dialog appears near the cursor and supports vertical scrolling.
+    Handle double-click on schedule Treeview to add or remove employees.
     """
-    dialog = tk.Toplevel()
-    dialog.title("Select Dates")
-    dialog.geometry("400x400")
-
-    # Place dialog at cursor position
+    item = tree.identify_row(event.y)
+    col = tree.identify_column(event.x)
+    if not item or not col:
+        return
+    cell_value = tree.set(item, col)
+    names = [n.strip() for n in cell_value.split(',') if n.strip()]
+    
     try:
-        x = tree.winfo_pointerx()
-        y = tree.winfo_pointery()
-        dialog.geometry(f"+{x}+{y}")
-    except Exception:
-        pass  # Fallback to default if unable to get pointer position
-
-    # Create a canvas with vertical scrollbar for the dialog content
-    canvas = tk.Canvas(dialog, borderwidth=0, background="#f0f0f0")
-    vscroll = ttk.Scrollbar(dialog, orient="vertical", command=canvas.yview)
-    canvas.configure(yscrollcommand=vscroll.set)
-    vscroll.pack(side="right", fill="y")
-    canvas.pack(side="left", fill="both", expand=True)
-
-    content_frame = ttk.Frame(canvas)
-    canvas.create_window((0, 0), window=content_frame, anchor="nw")
+        emp_df = pd.read_csv(emp_file_path, index_col="Employee/Input")
+        emp_df = emp_df.transpose()
+        available = emp_df[emp_df['Work Area'] == area].index.tolist()
+        if not available:
+            messagebox.showerror("Error", f"No employees found for {area} in {emp_file_path}")
+            return
+    except Exception as e:
+        messagebox.showerror("Error", f"Failed to load employee data from {emp_file_path}: {e}")
+        return
     
-    def on_frame_configure(event):
-        canvas.configure(scrollregion=canvas.bbox("all"))
+    dialog = tk.Toplevel()
+    dialog.title(f"Edit Employees - {area}")
+    dialog.geometry("300x400")
     
-    content_frame.bind("<Configure>", on_frame_configure)
+    tk.Label(dialog, text="Current Employees:").pack(pady=5)
+    lb = tk.Listbox(dialog, height=10)
+    for name in names:
+        lb.insert(tk.END, name)
+    lb.pack(pady=5, fill="both", expand=True)
     
-    def on_canvas_configure(event):
-        canvas.itemconfig("all", width=event.width)
+    def add_employee():
+        add_win = tk.Toplevel(dialog)
+        add_win.title("Add Employee")
+        add_win.geometry("200x150")
+        tk.Label(add_win, text="Select Employee:").pack(pady=5)
+        combo = ttk.Combobox(add_win, values=sorted([n for n in available if n not in names]))
+        combo.pack(pady=5)
+        def confirm_add():
+            new_name = combo.get()
+            if new_name:
+                if new_name not in names:
+                    names.append(new_name)
+                    lb.insert(tk.END, new_name)
+                    update_cell()
+                    logging.info(f"Added {new_name} to {area} schedule cell ({item}, {col})")
+                else:
+                    messagebox.showwarning("Warning", f"{new_name} is already assigned to this shift.")
+            add_win.destroy()
+        tk.Button(add_win, text="Add", command=confirm_add).pack(pady=5)
     
-    canvas.bind("<Configure>", on_canvas_configure)
+    def delete_employee():
+        sel = lb.curselection()
+        if sel:
+            del_name = lb.get(sel[0])
+            if messagebox.askyesno("Confirm Delete", f"Delete {del_name}?"):
+                names.remove(del_name)
+                lb.delete(sel[0])
+                update_cell()
+                logging.info(f"Removed {del_name} from {area} schedule cell ({item}, {col})")
+    
+    def update_cell():
+        new_value = ", ".join(names)
+        tree.set(item, col, new_value)
+        logging.info(f"Updated {area} schedule cell ({item}, {col}) to '{new_value}'")
+    
+    tk.Button(dialog, text="Add Employee", command=add_employee).pack(pady=5)
+    tk.Button(dialog, text="Delete Employee", command=delete_employee).pack(pady=5)
+    tk.Button(dialog, text="Close", command=dialog.destroy).pack(pady=5)
 
-    def on_frame_configure(event):
-        canvas.configure(scrollregion=canvas.bbox("all"))
-    content_frame.bind("<Configure>", on_frame_configure)
-
-    ttk.Label(content_frame, text=f"Select dates for {col_name}").pack(pady=5)
-
-    # Parse current dates, handling multiple formats
-    def parse_date(date_str):
-        try:
-            return datetime.datetime.strptime(date_str, "%m/%d/%Y").date()
-        except ValueError:
-            try:
-                return datetime.datetime.strptime(date_str, "%m-%d-%Y").date()
-            except ValueError:
-                return None
-
-    if current_value and current_value != "NaN":
-        selected_dates = [d.strip() for d in current_value.split(",")]
-        selected_dates = [parse_date(d) for d in selected_dates if d and parse_date(d)]
-    else:
-        selected_dates = []
-
-    # Create listbox to display selected dates
-    date_listbox = tk.Listbox(content_frame, height=5)
-    date_listbox.pack(pady=5, fill=tk.BOTH, expand=True)
-    for date in selected_dates:
-        date_listbox.insert(tk.END, date.strftime("%m/%d/%Y"))
-
-    # Calendar widget for selecting new dates
-    cal = Calendar(content_frame, selectmode="day", date_pattern="mm/dd/yyyy")
-    cal.pack(pady=5)
-
-    def add_date():
-        selected_date = cal.get_date()
-        if selected_date not in date_listbox.get(0, tk.END):
-            date_listbox.insert(tk.END, selected_date)
-
-    def remove_date():
-        try:
-            selected_idx = date_listbox.curselection()[0]
-            date_listbox.delete(selected_idx)
-        except IndexError:
-            pass
-
-    def save():
-        dates = date_listbox.get(0, tk.END)
-        new_value = ", ".join(dates) if dates else ""
-        tree.set(item, col_name, new_value)
-        dialog.destroy()
-
-    ttk.Button(content_frame, text="Add Date", command=add_date).pack(pady=5)
-    ttk.Button(content_frame, text="Remove Selected Date", command=remove_date).pack(pady=5)
-    ttk.Button(content_frame, text="Save", command=save).pack(pady=5)
-    dialog.transient(tree.winfo_toplevel())
-    dialog.grab_set()
-
-def parse_table_text_to_csv(emp_path, req_path, limits_path, emp_frame, req_frame, limits_frame):
+def save_schedule_changes(bar_frame, kitchen_frame, start_date, root):
     """
-    Save Treeview content to CSV files.
+    Save edited schedule data from Treeview widgets to CSV files with correct format (no blank lines between weeks).
     """
-    for tree in all_input_trees:
-        csv_file = None
-        has_index = False
-        index_label = None
-        parent = tree.master.master  # tree.master is the inner frame, master.master is the tab frame
-
-        if parent == emp_frame:
-            csv_file = emp_path
-            has_index = True
-            index_label = 'Employee/Input'
-        elif parent == req_frame:
-            csv_file = req_path
-            has_index = False
-            index_label = 'Day/Required'
-        elif parent == limits_frame:
-            csv_file = limits_path
-            has_index = False
-            index_label = None  # No index label for limits
-
-        if csv_file is None:
+    areas = {"Bar": bar_frame, "Kitchen": kitchen_frame}
+    save_messages = []
+    for area, frame in areas.items():
+        # Find all Treeviews recursively in the frame
+        week_trees = find_treeviews(frame)
+        if not week_trees:
+            save_messages.append(f"No schedule data for {area}.")
             continue
-
+        
+        output_file = f"{area}_schedule_{start_date.strftime('%Y-%m-%d')}.csv"
         try:
-            columns = tree["columns"]
-            items = tree.get_children()
-            data = []
-            indices = []
-
-            for item in items:
-                values = [tree.set(item, col) for col in columns]  # Collect values using tree.set to ensure all columns
-                data.append(values)
-                if has_index:
-                    indices.append(item)  # Use iid as index
-
-            if has_index:
-                df = pd.DataFrame(data, index=indices, columns=columns)
-                df.to_csv(csv_file, index=True, index_label=index_label)
+            if messagebox.askyesno("Confirm Overwrite", f"Overwrite {output_file}? Select No to save as new file."):
+                pass
             else:
-                df = pd.DataFrame(data, columns=columns)
-                df.to_csv(csv_file, index=False)
-
-            logging.debug(f"Saved {csv_file}")
-            messagebox.showinfo("Success", f"Saved {csv_file}")
+                output_file = filedialog.asksaveasfilename(defaultextension=".csv", filetypes=[("CSV files", "*.csv")], initialfile=output_file)
+                if not output_file:
+                    save_messages.append(f"Save cancelled for {area}.")
+                    continue
+            with open(output_file, 'w', newline='') as f:
+                for w, tree in enumerate(week_trees):
+                    columns = tree["columns"]
+                    f.write(','.join(f'"{col}"' if ',' in col else col for col in columns) + '\n')
+                    for item in tree.get_children():
+                        values = tree.item(item)['values']
+                        f.write(','.join(f'"{v}"' if ',' in str(v) else str(v) for v in values) + '\n')
+            save_messages.append(f"Saved {area} schedule to {output_file}")
         except Exception as e:
-            logging.error(f"Failed to save {csv_file}: {str(e)}")
-            messagebox.showerror("Error", f"Failed to save {csv_file}: {str(e)}")
+            save_messages.append(f"Failed to save {area} schedule: {str(e)}")
+            logging.error(f"Failed to save {area} schedule: {str(e)}")
+    
+    messagebox.showinfo("Save Complete", "\n".join(save_messages))
 
-def generate_schedule(emp_file_var, req_file_var, limits_file_var, start_date_entry, num_weeks_var, bar_frame, kitchen_frame, summary_text, viz_frame, root, notebook):
+def generate_schedule(emp_file_path, req_file_path, limits_file_path, start_date_entry, num_weeks_var, bar_frame, kitchen_frame, summary_text, viz_frame, root, notebook):
     """
     Generate and display the schedule based on input files and parameters.
     """
-    start_date = start_date_entry.get_date()
-    num_weeks = num_weeks_var.get()
-    all_listboxes.clear()  # Clear previous listboxes
-    all_input_trees.clear()  # Clear previous input trees
-    if num_weeks < 1:
-        messagebox.showerror("Error", "Number of weeks must be at least 1")
-        return
+    global all_listboxes
+    all_listboxes = []
+    
+    try:
+        start_date = start_date_entry.get_date()
+        num_weeks = num_weeks_var.get()
+        if num_weeks < 1:
+            messagebox.showerror("Error", "Number of weeks must be at least 1")
+            return
 
-    result = load_csv(emp_file_var.get(), req_file_var.get(), limits_file_var.get(), start_date, num_weeks)
-    if result is None:
-        return
-    employees, days, shifts, areas, shift_prefs, day_prefs, must_off, required, work_areas, constraints, min_shifts, max_shifts, max_weekend_days = result
+        result = load_csv(emp_file_path, req_file_path, limits_file_path, start_date, num_weeks)
+        if result is None:
+            return
+        employees, days, shifts, areas, shift_prefs, day_prefs, must_off, required, work_areas, constraints, min_shifts, max_shifts, max_weekend_days = result
 
-    relaxed_rules = []
-    prob = None
-    for relax_day in [True, False]:
-        for relax_shift in [True, False]:
-            for relax_weekend in [True, False]:
-                for relax_min_shifts in [True, False]:
-                    prob, x = solve_schedule(
-                        employees, days, shifts, areas, shift_prefs, day_prefs, must_off, required, work_areas,
-                        constraints, min_shifts, max_shifts, max_weekend_days, start_date,
-                        relax_day, relax_shift, relax_weekend, relax_min_shifts, num_weeks
-                    )
-                    if prob.status == pulp.LpStatusOptimal:
-                        relaxed_rules = []
-                        if relax_day:
-                            relaxed_rules.append("Day Weights")
-                        if relax_shift:
-                            relaxed_rules.append("Shift Weight")
-                        if relax_weekend:
-                            relaxed_rules.append("Max Number of Weekend Days")
-                        if relax_min_shifts:
-                            relaxed_rules.append("Min Shifts per Week")
-                        break
+        relaxed_rules = []
+        prob = None
+        for relax_day in [True, False]:
+            for relax_shift in [True, False]:
+                for relax_weekend in [True, False]:
+                    for relax_min_shifts in [True, False]:
+                        prob, x = solve_schedule(
+                            employees, days, shifts, areas, shift_prefs, day_prefs, must_off, required, work_areas,
+                            constraints, min_shifts, max_shifts, max_weekend_days, start_date,
+                            relax_day, relax_shift, relax_weekend, relax_min_shifts, num_weeks
+                        )
+                        if prob.status == pulp.LpStatusOptimal:
+                            relaxed_rules = []
+                            if relax_day:
+                                relaxed_rules.append("Day Weights")
+                            if relax_shift:
+                                relaxed_rules.append("Shift Weight")
+                            if relax_weekend:
+                                relaxed_rules.append("Max Number of Weekend Days")
+                            if relax_min_shifts:
+                                relaxed_rules.append("Min Shifts per Week")
+                            break
+                    else:
+                        continue
+                    break
                 else:
                     continue
                 break
             else:
                 continue
             break
-        else:
-            continue
-        break
 
-    if prob.status != pulp.LpStatusOptimal:
-        messagebox.showerror("Error", "Failed to find an optimal schedule")
-        return
+        if prob.status != pulp.LpStatusOptimal:
+            messagebox.showerror("Error", "Failed to find an optimal schedule")
+            return
 
-    save_messages = []
-    summary_data = []
-    weekly_assignments = {area: {w: {s: {d: [] for d in days} for s in shifts} for w in range(num_weeks)} for area in areas}
-    for e in employees:
-        total_shifts = 0
-        week_shifts = [0] * num_weeks
-        for w in range(num_weeks):
-            for d in days:
-                for s in shifts:
-                    for a in work_areas[e]:
-                        if pulp.value(x[e][w][d][s][a]) == 1:
-                            weekly_assignments[a][w][s][d].append(e)
-                            total_shifts += 1
-                            week_shifts[w] += 1
-        summary_data.append({
-            "Employee": e,
-            "Total Shifts": total_shifts,
-            **{f"Week {i+1}": week_shifts[i] for i in range(num_weeks)}
-        })
-    summary_df = pd.DataFrame(summary_data)
-    overall_total_shifts = summary_df["Total Shifts"].sum()
-    employees_sorted = sorted(employees)
-
-    for area in areas:
-        area_frame = bar_frame if area == "Bar" else kitchen_frame
-        for widget in area_frame.winfo_children():
-            widget.destroy()
-
-        weekly_trees = []
-        week_start = start_date
-        for w in range(num_weeks):
-            week_frame = tk.Frame(area_frame)
-            week_frame.pack(pady=5, fill="both", expand=True)
-            tk.Label(week_frame, text=f"{area} Schedule - Week {w + 1} ({week_start.strftime('%b %d, %Y')})").pack()
-
-            # Create a frame to hold Treeview and scrollbars
-            tree_frame = tk.Frame(week_frame)
-            tree_frame.pack(fill="both", expand=True)
-
-            tree = ttk.Treeview(tree_frame, show="headings", height=2)
-            tree_vsb = ttk.Scrollbar(tree_frame, orient="vertical", command=tree.yview)
-            tree_hsb = ttk.Scrollbar(tree_frame, orient="horizontal", command=tree.xview)
-            tree.configure(yscrollcommand=tree_vsb.set, xscrollcommand=tree_hsb.set)
-            tree.pack(side="left", fill="both", expand=True)
-            tree_vsb.pack(side="right", fill="y")
-            tree_hsb.pack(side="bottom", fill="x")
-
-            # Define columns
-            columns = ["Day/Shift"] + [day for day in days]
-            tree["columns"] = columns
-            for col in columns:
-                header_text = col if col == "Day/Shift" else (week_start + datetime.timedelta(days=days.index(col))).strftime("%a, %b %d")
-                tree.heading(col, text=header_text)
-                tree.column(col, width=100, minwidth=100, stretch=1, anchor="center")
-
-            # Insert data into Treeview
-            morning_values = [f"Week {w+1} Morning"]
-            for day in days:
-                employees = ", ".join(sorted(weekly_assignments[area][w]["Morning"][day]))
-                morning_values.append(employees)
-            tree.insert("", "end", iid=f"morning_{w}", values=morning_values)
-            evening_values = [f"Week {w+1} Evening"]
-            for day in days:
-                employees = ", ".join(sorted(weekly_assignments[area][w]["Evening"][day]))
-                evening_values.append(employees)
-            tree.insert("", "end", iid=f"evening_{w}", values=evening_values)
-
-            weekly_trees.append(tree)
-            all_listboxes.append(tree)
-            week_start += datetime.timedelta(days=7)
-
-        # Save schedule to CSV
-        try:
-            schedule_data = []
+        summary_data = []
+        overall_total_shifts = 0
+        weekly_assignments = {area: [{s: {d: [] for d in days} for s in shifts} for _ in range(num_weeks)] for area in areas}
+        for e in employees:
+            total_shifts = 0
+            week_shifts = [0] * num_weeks
             for w in range(num_weeks):
-                for s in shifts:
-                    row = {"Day/Shift": f"Week {w+1} {s}"}
-                    for d in days:
-                        date = start_date + datetime.timedelta(days=(w * 7 + days.index(d)))
-                        employees = ", ".join(sorted(weekly_assignments[area][w][s][d]))
-                        row[d] = employees
-                    schedule_data.append(row)
-            schedule_df = pd.DataFrame(schedule_data)
-            schedule_df.set_index("Day/Shift", inplace=True)
-            output_file = f"{area}_schedule_{start_date.strftime('%Y-%m-%d')}.csv"
-            schedule_df.to_csv(output_file)
-            save_messages.append(f"Saved {area} schedule to {output_file}")
+                for d in days:
+                    for s in shifts:
+                        for a in work_areas[e]:
+                            if pulp.value(x[e][w][d][s][a]) == 1:
+                                weekly_assignments[a][w][s][d].append(e)
+                                total_shifts += 1
+                                week_shifts[w] += 1
+            summary_data.append({
+                "Employee": e,
+                "Total Shifts": total_shifts,
+                **{f"Week {i+1}": week_shifts[i] for i in range(num_weeks)}
+            })
+            overall_total_shifts += total_shifts
+        summary_df = pd.DataFrame(summary_data)
+        employees_sorted = sorted(employees)
+        summary_df = summary_df.set_index("Employee").loc[employees_sorted].reset_index()
+
+        save_messages = []
+        for area in areas:
+            area_frame = bar_frame if area == "Bar" else kitchen_frame
+            for widget in area_frame.winfo_children():
+                widget.destroy()
+
+            weekly_trees = []
+            week_start = start_date
+            for w in range(num_weeks):
+                week_dates = [(week_start + datetime.timedelta(days=d)).strftime("%a, %b %d, %y") for d in range(7)]
+                columns = ["Day/Shift"] + week_dates
+
+                week_frame = tk.Frame(area_frame)
+                week_frame.pack(pady=5, fill="both", expand=True)
+                tk.Label(week_frame, text=f"{area} Schedule - Week {w + 1} ({week_start.strftime('%b %d, %Y')} - {(week_start + datetime.timedelta(days=6)).strftime('%b %d, %Y')})").pack()
+
+                tree_frame = tk.Frame(week_frame)
+                tree_frame.pack(fill="both", expand=True)
+
+                tree = ttk.Treeview(tree_frame, show="headings", height=2)
+                tree_vsb = ttk.Scrollbar(tree_frame, orient="vertical", command=tree.yview)
+                tree_hsb = ttk.Scrollbar(tree_frame, orient="horizontal", command=tree.xview)
+                tree.configure(yscrollcommand=tree_vsb.set, xscrollcommand=tree_hsb.set)
+                tree.pack(side="left", fill="both", expand=True)
+                tree_vsb.pack(side="right", fill="y")
+                tree_hsb.pack(side="bottom", fill="x")
+
+                tree["columns"] = columns
+                for col in columns:
+                    tree.heading(col, text=col)
+                    tree.column(col, width=100, minwidth=100, stretch=1, anchor="center")
+
+                morning_values = ["Morning"]
+                for day in days:
+                    employees = ", ".join(sorted(weekly_assignments[area][w]["Morning"][day]))
+                    morning_values.append(employees)
+                tree.insert("", "end", iid=f"morning_{w}", values=morning_values)
+                evening_values = ["Evening"]
+                for day in days:
+                    employees = ", ".join(sorted(weekly_assignments[area][w]["Evening"][day]))
+                    evening_values.append(employees)
+                tree.insert("", "end", iid=f"evening_{w}", values=evening_values)
+
+                tree.bind("<Double-1>", lambda event, a=area, t=tree: edit_schedule_cell(t, event, a, emp_file_path))
+
+                weekly_trees.append(tree)
+                all_listboxes.append(tree)
+                week_start += datetime.timedelta(days=7)
+
+            try:
+                output_file = f"{area}_schedule_{start_date.strftime('%Y-%m-%d')}.csv"
+                if messagebox.askyesno("Confirm Overwrite", f"Overwrite {output_file}? Select No to save as new file."):
+                    pass
+                else:
+                    output_file = filedialog.asksaveasfilename(defaultextension=".csv", filetypes=[("CSV files", "*.csv")], initialfile=output_file)
+                    if not output_file:
+                        save_messages.append(f"Save cancelled for {area}.")
+                        continue
+                with open(output_file, 'w', newline='') as f:
+                    for w, tree in enumerate(weekly_trees):
+                        columns = tree["columns"]
+                        f.write(','.join(f'"{col}"' if ',' in col else col for col in columns) + '\n')
+                        for item in tree.get_children():
+                            values = tree.item(item)['values']
+                            f.write(','.join(f'"{v}"' if ',' in str(v) else str(v) for v in values) + '\n')
+                save_messages.append(f"Saved {area} schedule to {output_file}")
+            except Exception as e:
+                save_messages.append(f"Failed to save {area} schedule: {str(e)}")
+                logging.error(f"Failed to save {area} schedule: {str(e)}")
+
+        try:
+            output_file = f"Summary_report_{start_date.strftime('%Y-%m-%d')}.csv"
+            if messagebox.askyesno("Confirm Overwrite", f"Overwrite {output_file}? Select No to save as new file."):
+                pass
+            else:
+                output_file = filedialog.asksaveasfilename(defaultextension=".csv", filetypes=[("CSV files", "*.csv")], initialfile=output_file)
+                if not output_file:
+                    save_messages.append("Save cancelled for summary report.")
+            summary_df.to_csv(output_file, index=False)
+            save_messages.append(f"Saved summary report to {output_file}")
         except Exception as e:
-            save_messages.append(f"Failed to save {area} schedule: {str(e)}")
+            save_messages.append(f"Failed to save summary report: {str(e)}")
+            logging.error(f"Failed to save summary report: {str(e)}")
 
-    # Save summary report
-    try:
-        summary_df.to_csv(f"Summary_report_{start_date.strftime('%Y-%m-%d')}.csv", index=False)
-        save_messages.append(f"Saved summary report to Summary_report_{start_date.strftime('%Y-%m-%d')}.csv")
+        violations = validate_weekend_constraints(x, employees, days, shifts, work_areas, max_weekend_days, start_date, num_weeks)
+        violations_str = "No weekend violations." if not violations else "Weekend Violations:\n" + "\n".join(violations)
+
+        min_emps = min_employees_to_avoid_weekend_violations(required, max_weekend_days, areas, num_weeks)
+        min_str = "Minimum employees needed to avoid weekend violations: " + ", ".join(f"{a}: {min_emps[a]}" for a in areas)
+
+        summary_text.delete(1.0, tk.END)
+        if relaxed_rules:
+            summary_text.insert(tk.END, f"Relaxed rules: {', '.join(relaxed_rules)}\n\n")
+        summary_text.insert(tk.END, violations_str + "\n\n")
+        summary_text.insert(tk.END, min_str + "\n\n")
+
+        summary_text.insert(tk.END, "Employee Shift Summary:\n")
+        summary_text.insert(tk.END, f"{'Employee':<20} {'Total':<8} {'Weeks':<20}\n")
+        summary_text.insert(tk.END, "-" * 48 + "\n")
+        for index, row in summary_df.iterrows():
+            week_str = ", ".join(str(int(row[f'Week {i+1}'])) for i in range(num_weeks))
+            summary_text.insert(tk.END, f"{row['Employee']:<20} {int(row['Total Shifts']):<8} {week_str}\n")
+        summary_text.insert(tk.END, f"\n{'Overall Total Shifts':<20} {overall_total_shifts}\n\n")
+
+        try:
+            for child in viz_frame.winfo_children():
+                child.destroy()
+            
+            fig_width = max(10, len(employees_sorted) * 0.5)
+            fig, axs = plt.subplots(1, 2, figsize=(fig_width + 5, 6), gridspec_kw={'width_ratios': [3, 1]})
+            
+            colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728']
+            week_data = {f'Week {i+1}': [] for i in range(num_weeks)}
+            for _, row in summary_df.iterrows():
+                for i in range(num_weeks):
+                    week_data[f'Week {i+1}'].append(row[f'Week {i+1}'])
+            
+            bottom = np.zeros(len(employees_sorted))
+            for i, (week, data) in enumerate(week_data.items()):
+                axs[0].bar(employees_sorted, data, label=week, bottom=bottom, color=colors[i % len(colors)])
+                bottom += np.array(data)
+            
+            axs[0].set_xlabel('Employees')
+            axs[0].set_ylabel('Shifts')
+            axs[0].set_title('Shifts per Employee (Stacked by Week)')
+            axs[0].legend()
+            axs[0].tick_params(axis='x', rotation=45, labelsize=8)
+            
+            total_per_week = [sum(week_data[week]) for week in week_data]
+            axs[1].bar(week_data.keys(), total_per_week, color=colors[:len(week_data)])
+            axs[1].set_xlabel('Weeks')
+            axs[1].set_ylabel('Total Shifts')
+            axs[1].set_title('Total Shifts per Week')
+            axs[1].tick_params(axis='x', rotation=45)
+            
+            plt.tight_layout()
+            
+            viz_canvas = FigureCanvasTkAgg(fig, master=viz_frame)
+            viz_canvas.draw()
+            viz_canvas.get_tk_widget().pack(fill='both', expand=True)
+            
+            viz_frame.figure = fig
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to create visualization: {e}")
+            logging.error(f"Failed to create visualization: {str(e)}")
+            tk.Label(viz_frame, text="Visualization failed.").pack()
+            plt.close('all')
+
+        adjust_column_widths(root, all_listboxes, all_input_trees, notebook, summary_text)
+        
+        message = "\n".join(save_messages) + "\n\n" + violations_str
+        messagebox.showinfo("Schedule Generation Complete", message)
     except Exception as e:
-        save_messages.append(f"Failed to save summary report: {str(e)}")
-
-    violations = validate_weekend_constraints(x, employees, days, shifts, work_areas, max_weekend_days, start_date, num_weeks)
-    violations_str = "No weekend violations." if not violations else "Weekend Violations:\n" + "\n".join(violations)
-
-    min_emps = min_employees_to_avoid_weekend_violations(required, max_weekend_days, areas, num_weeks)
-    min_str = "Minimum employees needed to avoid weekend violations: " + ", ".join(f"{a}: {min_emps[a]}" for a in areas)
-
-    summary_text.delete(1.0, tk.END)
-    if relaxed_rules:
-        summary_text.insert(tk.END, f"Relaxed rules: {', '.join(relaxed_rules)}\n\n")
-    summary_text.insert(tk.END, violations_str + "\n\n")
-    summary_text.insert(tk.END, min_str + "\n\n")
-
-    summary_text.insert(tk.END, "Employee Shift Summary:\n")
-    summary_text.insert(tk.END, f"{'Employee':<20} {'Total':<8} {'Weeks':<20}\n")
-    summary_text.insert(tk.END, "-" * 48 + "\n")
-    for index, row in summary_df.iterrows():
-        week_str = ", ".join(str(int(row[f'Week {i+1}'])) for i in range(num_weeks))
-        summary_text.insert(tk.END, f"{row['Employee']:<20} {int(row['Total Shifts']):<8} {week_str}\n")
-    summary_text.insert(tk.END, f"\n{'Overall Total Shifts':<20} {overall_total_shifts}\n\n")
-
-    try:
-        for child in viz_frame.winfo_children():
-            child.destroy()
-        
-        fig_width = max(10, len(employees_sorted) * 0.5)
-        fig, axs = plt.subplots(1, 2, figsize=(fig_width + 5, 6), gridspec_kw={'width_ratios': [3, 1]})
-        
-        colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728']
-        week_data = {f'Week {i+1}': [] for i in range(num_weeks)}
-        for _, row in summary_df.iterrows():
-            for i in range(num_weeks):
-                week_data[f'Week {i+1}'].append(row[f'Week {i+1}'])
-        
-        bottom = np.zeros(len(employees_sorted))
-        for i, (week, data) in enumerate(week_data.items()):
-            axs[0].bar(employees_sorted, data, label=week, bottom=bottom, color=colors[i % len(colors)])
-            bottom += np.array(data)
-        
-        axs[0].set_xlabel('Employees')
-        axs[0].set_ylabel('Shifts')
-        axs[0].set_title('Shifts per Employee (Stacked by Week)')
-        axs[0].legend()
-        axs[0].tick_params(axis='x', rotation=45, labelsize=8)
-        
-        total_per_week = [sum(week_data[week]) for week in week_data]
-        axs[1].bar(week_data.keys(), total_per_week, color=colors[:len(week_data)])
-        axs[1].set_xlabel('Weeks')
-        axs[1].set_ylabel('Total Shifts')
-        axs[1].set_title('Total Shifts per Week')
-        axs[1].tick_params(axis='x', rotation=45)
-        
-        plt.tight_layout()
-        
-        viz_canvas = FigureCanvasTkAgg(fig, master=viz_frame)
-        viz_canvas.draw()
-        viz_canvas.get_tk_widget().pack(fill='both', expand=True)
-        
-        # Store the figure to close it later
-        viz_frame.figure = fig  # Attach figure to viz_frame for cleanup
-    except Exception as e:
-        messagebox.showerror("Error", f"Failed to create visualization: {e}")
-        tk.Label(viz_frame, text="Visualization failed.").pack()
-        plt.close('all')  # Close any figures in case of error
-
-    adjust_column_widths(root, all_listboxes, all_input_trees, notebook, summary_text)
-
-    message = "\n".join(save_messages) + "\n\n" + violations_str
-    messagebox.showinfo("Schedule Generation Complete", message)
+        messagebox.showerror("Error", f"Failed to generate schedule: {str(e)}")
+        logging.error(f"Failed to generate schedule: {str(e)}")
