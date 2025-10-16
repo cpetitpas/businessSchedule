@@ -34,6 +34,25 @@ def load_csv(emp_file, req_file, limits_file, start_date, num_weeks_var):
                 raise ValueError(f"Invalid work area for {emp}: {area}")
         logging.debug("Work areas: %s", work_areas)
         
+        # Load shifts from Hard_Limits.csv
+        limits_df = pd.read_csv(limits_file)
+        logging.debug("Hard Limits CSV loaded: %s", limits_df.to_string())
+        if limits_df.empty:
+            logging.error("Hard_Limits.csv is empty")
+            raise ValueError("Hard_Limits.csv is empty")
+        if "Shifts" not in limits_df.columns:
+            logging.error("Shifts column missing in Hard_Limits.csv")
+            raise ValueError("Shifts column missing in Hard_Limits.csv")
+        shift_str = limits_df["Shifts"].iloc[0]
+        if pd.isna(shift_str):
+            logging.error("Shifts column is empty in Hard_Limits.csv")
+            raise ValueError("Shifts column is empty in Hard_Limits.csv")
+        shifts = [s.strip() for s in shift_str.split(",")]
+        if not shifts:
+            logging.error("No valid shifts found in Hard_Limits.csv")
+            raise ValueError("No valid shifts found in Hard_Limits.csv")
+        logging.debug("Shifts: %s", shifts)
+        
         shift_prefs = {}
         shift_row = "shift weight"
         if shift_row not in emp_df.index:
@@ -41,20 +60,15 @@ def load_csv(emp_file, req_file, limits_file, start_date, num_weeks_var):
             raise ValueError("Cannot find 'Shift Weight' row in Employee_Data.csv")
         for emp in employees:
             shift = emp_df.loc[shift_row, emp]
-            if pd.isna(shift):
-                shift_prefs[emp] = {"Morning": 0, "Evening": 0}
-            else:
+            shift_prefs[emp] = {s: 0 for s in shifts}
+            if pd.notna(shift):
                 shift = str(shift).strip().lower()
-                if shift not in ["morning", "evening"]:
+                if shift in [s.lower() for s in shifts]:
+                    shift_prefs[emp][next(s for s in shifts if s.lower() == shift)] = 10
+                else:
                     logging.warning("Invalid shift '%s' for %s, assuming no preference", shift, emp)
                     print(f"Warning: Invalid shift '{shift}' for {emp}, assuming no preference")
-                    shift_prefs[emp] = {"Morning": 0, "Evening": 0}
-                else:
-                    shift_prefs[emp] = {
-                        "Morning": 10 if shift == "morning" else 0,
-                        "Evening": 10 if shift == "evening" else 0
-                    }
-        logging.debug("Shift preferences: %s", shift_prefs)
+            logging.debug("Shift preferences for %s: %s", emp, shift_prefs[emp])
         
         days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
         day_prefs = {}
@@ -70,86 +84,77 @@ def load_csv(emp_file, req_file, limits_file, start_date, num_weeks_var):
                     preferred_days = [d.strip() for d in str(day_str).split(", ")]
                     invalid_days = [d for d in preferred_days if d not in days]
                     if invalid_days:
-                        logging.warning("Invalid days %s for %s, ignoring them", invalid_days, emp)
-                        print(f"Warning: Invalid days {invalid_days} for {emp}, ignoring them")
+                        logging.warning("Invalid days for %s: %s, ignoring them", emp, invalid_days)
+                        print(f"Warning: Invalid days for {emp}: {invalid_days}, ignoring them")
                         preferred_days = [d for d in preferred_days if d in days]
-                except:
-                    logging.warning("Failed to parse day preferences for %s", emp)
-                    print(f"Warning: Failed to parse day preferences for {emp}")
+                except Exception as e:
+                    logging.warning("Failed to parse day weights for %s: %s", emp, str(e))
+                    print(f"Warning: Failed to parse day weights for {emp}: {str(e)}")
+                    preferred_days = []
             day_prefs[emp] = {d: 10 if d in preferred_days else 0 for d in days}
-        logging.debug("Day preferences: %s", day_prefs)
         
         must_off = {}
         must_off_row = "must have off"
-        if must_off_row not in emp_df.index:
-            logging.error("Cannot find 'Must have off' row in Employee_Data.csv")
-            raise ValueError("Cannot find 'Must have off' row in Employee_Data.csv")
-        for emp in employees:
-            must_off_str = emp_df.loc[must_off_row, emp]
-            if pd.isna(must_off_str):
-                must_off[emp] = []
-            else:
-                must_off[emp] = [(emp, d.strip()) for d in str(must_off_str).split(",") if d.strip()]
-        logging.debug("Raw must-off dates: %s", must_off)
-        
-        for emp in must_off:
-            parsed_dates = []
-            for emp_id, date_str in must_off[emp]:
-                date_str = str(date_str)  # Ensure date_str is string
-                try:
-                    date = datetime.strptime(date_str, "%m/%d/%Y").date()
-                    logging.debug("Parsed date '%s' as %s for %s", date_str, date, emp)
-                    parsed_dates.append((emp_id, date.strftime("%Y-%m-%d")))
-                except ValueError:
+        if must_off_row in emp_df.index:
+            for emp in employees:
+                off_str = emp_df.loc[must_off_row, emp]
+                if pd.notna(off_str):
                     try:
-                        date = datetime.strptime(date_str, "%m-%d-%Y").date()
-                        logging.debug("Parsed date '%s' as %s for %s", date_str, date, emp)
-                        parsed_dates.append((emp_id, date.strftime("%Y-%m-%d")))
-                    except ValueError:
-                        logging.warning("Failed to parse date '%s' for %s: invalid format", date_str, emp)
-                        invalid_dates.append(f"{emp}: {date_str}")
-                        continue
-                except Exception as e:
-                    logging.warning("Failed to parse date '%s' for %s: %s", date_str, emp, str(e))
-                    invalid_dates.append(f"{emp}: {date_str}")
-                    continue
-            must_off[emp] = parsed_dates
-        logging.debug("Parsed must-off dates: %s", must_off)
-        
+                        off_dates = [(emp, d.strip()) for d in str(off_str).split(", ")]
+                        for e, d in off_dates:
+                            try:
+                                datetime.strptime(d, "%m/%d/%Y")
+                            except ValueError:
+                                invalid_dates.append(f"{e}: {d}")
+                        must_off[emp] = off_dates
+                    except Exception as e:
+                        logging.warning("Failed to parse must-off for %s: %s", emp, str(e))
+                        print(f"Warning: Failed to parse must-off for {emp}: {str(e)}")
         if invalid_dates:
-            messagebox.showwarning("Invalid Dates", "Invalid must-off dates found and will be ignored: " + ", ".join(invalid_dates))
+            messagebox.showwarning("Invalid Dates", "Invalid must-off dates detected:\n" + "\n".join(invalid_dates))
+        logging.debug("Must-off: %s", must_off)
         
         min_shifts = {}
-        min_row = "min shifts per week"
-        if min_row not in emp_df.index:
+        min_shifts_row = "min shifts per week"
+        if min_shifts_row not in emp_df.index:
             logging.error("Cannot find 'Min Shifts per Week' row in Employee_Data.csv")
             raise ValueError("Cannot find 'Min Shifts per Week' row in Employee_Data.csv")
         for emp in employees:
-            value = emp_df.loc[min_row, emp]
-            min_shifts[emp] = int(value) if pd.notna(value) else 0
-        logging.debug("Min shifts per week per employee: %s", min_shifts)
+            try:
+                min_shifts[emp] = int(emp_df.loc[min_shifts_row, emp])
+            except (ValueError, TypeError):
+                logging.warning("Invalid min shifts for %s, assuming 0", emp)
+                print(f"Warning: Invalid min shifts for {emp}, assuming 0")
+                min_shifts[emp] = 0
+        logging.debug("Min shifts: %s", min_shifts)
         
         max_shifts = {}
-        max_row = "max shifts per week"
-        if max_row not in emp_df.index:
+        max_shifts_row = "max shifts per week"
+        if max_shifts_row not in emp_df.index:
             logging.error("Cannot find 'Max Shifts per Week' row in Employee_Data.csv")
             raise ValueError("Cannot find 'Max Shifts per Week' row in Employee_Data.csv")
         for emp in employees:
-            value = emp_df.loc[max_row, emp]
-            max_shifts[emp] = int(value) if pd.notna(value) else 5
-        logging.debug("Max shifts per week per employee: %s", max_shifts)
+            try:
+                max_shifts[emp] = int(emp_df.loc[max_shifts_row, emp])
+            except (ValueError, TypeError):
+                logging.warning("Invalid max shifts for %s, assuming 7", emp)
+                print(f"Warning: Invalid max shifts for {emp}, assuming 7")
+                max_shifts[emp] = 7
+        logging.debug("Max shifts: %s", max_shifts)
         
         max_weekend_days = {}
-        weekend_row = "max number of weekend days"
-        if weekend_row not in emp_df.index:
-            logging.warning("Cannot find 'Max Number of Weekend Days' row in Employee_Data.csv, using default (1)")
-            print("Warning: Cannot find 'Max Number of Weekend Days' row in Employee_Data.csv, using default (1)")
-            max_weekend_days = {emp: 1 for emp in employees}
-        else:
-            for emp in employees:
-                value = emp_df.loc[weekend_row, emp]
-                max_weekend_days[emp] = int(value) if pd.notna(value) else 1
-        logging.debug("Max weekend days per employee: %s", max_weekend_days)
+        max_weekend_row = "max number of weekend days"
+        if max_weekend_row not in emp_df.index:
+            logging.error("Cannot find 'Max Number of Weekend Days' row in Employee_Data.csv")
+            raise ValueError("Cannot find 'Max Number of Weekend Days' row in Employee_Data.csv")
+        for emp in employees:
+            try:
+                max_weekend_days[emp] = int(emp_df.loc[max_weekend_row, emp])
+            except (ValueError, TypeError):
+                logging.warning("Invalid max weekend days for %s, assuming 2", emp)
+                print(f"Warning: Invalid max weekend days for {emp}, assuming 2")
+                max_weekend_days[emp] = 2
+        logging.debug("Max weekend days: %s", max_weekend_days)
         
         req_df = pd.read_csv(req_file, index_col=0)
         logging.debug("Personel Required CSV loaded: %s", req_df.to_string())
@@ -160,22 +165,17 @@ def load_csv(emp_file, req_file, limits_file, start_date, num_weeks_var):
         for day in days:
             required[day] = {}
             for area in areas:
-                counts = req_df.loc[area, day].split("/") if pd.notna(req_df.loc[area, day]) else ["0", "0"]
+                counts = req_df.loc[area, day].split("/") if pd.notna(req_df.loc[area, day]) else ["0"] * len(shifts)
+                if len(counts) != len(shifts):
+                    logging.error("Invalid number of shift counts for %s on %s: expected %d, got %d", area, day, len(shifts), len(counts))
+                    raise ValueError(f"Invalid number of shift counts for {area} on {day}: expected {len(shifts)}, got {len(counts)}")
                 try:
-                    required[day][area] = {
-                        "Morning": int(counts[0]),
-                        "Evening": int(counts[1])
-                    }
+                    required[day][area] = {shifts[i]: int(count) for i, count in enumerate(counts)}
                 except (IndexError, ValueError):
                     logging.error("Invalid staffing requirement for %s on %s: %s", area, day, req_df.loc[area, day])
                     raise ValueError(f"Invalid staffing requirement for {area} on {day}")
         logging.debug("Required staffing: %s", required)
         
-        limits_df = pd.read_csv(limits_file)
-        logging.debug("Hard Limits CSV loaded: %s", limits_df.to_string())
-        if limits_df.empty:
-            logging.error("Hard_Limits.csv is empty")
-            raise ValueError("Hard_Limits.csv is empty")
         constraints = {
             "max_shifts_per_day": 1,
             "violate_order": ["Day Weights", "Shift Weight", "Max Number of Weekend Days", "Min Shifts per Week"]
@@ -208,7 +208,7 @@ def load_csv(emp_file, req_file, limits_file, start_date, num_weeks_var):
         logging.debug("Constraints: %s", constraints)
         
         logging.debug("Exiting load_csv")
-        return employees, days, ["Morning", "Evening"], areas, shift_prefs, day_prefs, must_off, required, work_areas, constraints, min_shifts, max_shifts, max_weekend_days
+        return employees, days, shifts, areas, shift_prefs, day_prefs, must_off, required, work_areas, constraints, min_shifts, max_shifts, max_weekend_days
     except Exception as e:
         logging.error("Failed to load CSV files: %s", str(e))
         messagebox.showerror("Error", f"Failed to load CSV files: {str(e)}")
