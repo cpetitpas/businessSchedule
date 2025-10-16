@@ -2,6 +2,9 @@ import json
 import os
 import logging
 import tkinter as tk
+from tkinter import messagebox
+import matplotlib.pyplot as plt
+import threading
 
 def load_config(root, emp_file_var, req_file_var, limits_file_var):
     logging.debug("Entering load_config")
@@ -45,6 +48,24 @@ def save_config(emp_file_var, req_file_var, limits_file_var, root):
     logging.debug("Exiting save_config")
 
 def on_closing(emp_file_var, req_file_var, limits_file_var, root):
-    logging.debug("Window closing, saving config")
-    save_config(emp_file_var, req_file_var, limits_file_var, root)
-    root.destroy()
+    logging.debug("Starting application shutdown")
+    try:
+        # Save configuration
+        save_config(emp_file_var, req_file_var, limits_file_var, root)
+        # Close all matplotlib figures
+        plt.close('all')
+        # Check for active threads (excluding main thread)
+        active_threads = [t for t in threading.enumerate() if t is not threading.main_thread()]
+        if active_threads:
+            logging.warning(f"Active threads detected during shutdown: {[t.name for t in active_threads]}")
+        # Destroy Tkinter root
+        root.destroy()
+        logging.info("Application closed successfully")
+    except Exception as e:
+        logging.error(f"Error during shutdown: {e}")
+        messagebox.showerror("Error", f"Failed to close application cleanly: {e}")
+        root.destroy()  # Ensure root is destroyed even if an error occurs
+    finally:
+        # Ensure the application exits
+        root.quit()
+        logging.debug("Exiting on_closing")
