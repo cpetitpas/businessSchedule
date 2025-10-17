@@ -34,13 +34,31 @@ def solve_schedule(employees, days, shifts, areas, shift_prefs, day_prefs, must_
     day_penalty = -10 if relax_day else 0
     shift_penalty = -10 if relax_shift else 0
     min_shifts_penalty = -100 if relax_min_shifts else 0
+    weekend_penalty = -100 if relax_weekend else 0
     objective = pulp.lpSum(
-        x[e][w][d][s][a] * ((day_prefs[e][d] if day_prefs[e][d] > 0 else day_penalty) + (shift_prefs[e][s] if shift_prefs[e][s] > 0 else shift_penalty))
+        x[e][w][d][s][a] * (
+            (day_prefs[e][d] if day_prefs[e][d] > 0 else (day_penalty if day_prefs[e][d] < 0 else 0)) +
+            (shift_prefs[e][s] if shift_prefs[e][s] > 0 else (shift_penalty if shift_prefs[e][s] < 0 else 0))
+        )
         for e in employees for w in range(num_weeks) for d in days for s in shifts for a in work_areas[e]
     )
+    
+    # Add penalties for relaxed constraints
+    if relax_min_shifts:
+        slack_min = {e: {w: pulp.LpVariable(f"slack_min_{e}_{w}", lowBound=0) for w in range(num_weeks)} for e in employees}
+        objective += pulp.lpSum(min_shifts_penalty * slack_min[e][w] for e in employees for w in range(num_weeks))
+    if relax_weekend:
+        fri_sun_windows = []
+        for w in range(num_weeks - 1):
+            fri_sun_windows.append([(w, "Fri"), (w, "Sat"), (w + 1, "Sun")])
+        if num_weeks > 0:
+            fri_sun_windows.append([(num_weeks - 1, "Fri"), (num_weeks - 1, "Sat")])
+        slack_weekend = {e: {i: pulp.LpVariable(f"slack_weekend_{e}_{i}", lowBound=0) for i in range(len(fri_sun_windows))} for e in employees}
+        objective += pulp.lpSum(weekend_penalty * slack_weekend[e][i] for e in employees for i in range(len(fri_sun_windows)))
+    
     prob += objective
-    logging.debug("Objective function set with day_penalty=%d, shift_penalty=%d, min_shifts_penalty=%d",
-                  day_penalty, shift_penalty, min_shifts_penalty)
+    logging.debug("Objective function set with day_penalty=%d, shift_penalty=%d, min_shifts_penalty=%d, weekend_penalty=%d",
+                  day_penalty, shift_penalty, min_shifts_penalty, weekend_penalty)
     
     # Staffing requirement constraints
     staffing_count = 0
@@ -89,7 +107,10 @@ def solve_schedule(employees, days, shifts, areas, shift_prefs, day_prefs, must_
     min_shifts_week_count = 0
     for e in employees:
         for w in range(num_weeks):
-            prob += pulp.lpSum(x[e][w][d][s][a] for d in days for s in shifts for a in work_areas[e]) >= min_shifts[e] - (2 if relax_min_shifts else 0)
+            if relax_min_shifts:
+                prob += pulp.lpSum(x[e][w][d][s][a] for d in days for s in shifts for a in work_areas[e]) >= min_shifts[e] - slack_min[e][w]
+            else:
+                prob += pulp.lpSum(x[e][w][d][s][a] for d in days for s in shifts for a in work_areas[e]) >= min_shifts[e]
             min_shifts_week_count += 1
     logging.debug("Added %d min shifts per week constraints", min_shifts_week_count)
     

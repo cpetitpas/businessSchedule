@@ -93,9 +93,9 @@ def display_input_data(emp_path, req_path, limits_path, emp_frame, req_frame, li
         tree.bind("<Double-1>", lambda event: on_tree_double_click(tree, event, has_index))
         return tree
 
-    create_treeview(emp_frame, emp_path, has_index=True)
+    create_treeview(emp_frame, emp_path, has_index=False)
     create_treeview(req_frame, req_path, has_index=False)
-    create_treeview(limits_frame, limits_path, has_index=False)
+    create_treeview(limits_frame, limits_path, has_index=True)
 
     adjust_column_widths(root, all_listboxes, all_input_trees, notebook, summary_text)
 
@@ -155,14 +155,18 @@ def on_tree_double_click(tree, event, has_index):
 
     col_idx = int(column.replace('#', '')) - 1
     col_name = tree["columns"][col_idx]
-    row_id = item if has_index else tree.index(item)
+    
+    # Don't allow editing the first column for tables with index (Employee Data, Personnel Required)
+    # Only allow first column editing for Hard Limits (has_index=False)
+    if col_idx == 0 and has_index ==  False:
+        return
 
     current_value = tree.set(item, col_name)
 
     entry = tk.Entry(tree)
     entry.insert(0, current_value)
-    entry.bind("<Return>", lambda e: update_cell())
-    entry.bind("<FocusOut>", lambda e: update_cell())
+    entry.bind("<Return>", lambda _: update_cell())
+    entry.bind("<FocusOut>", lambda _: update_cell())
     
     def update_cell():
         new_value = entry.get()
@@ -181,8 +185,16 @@ def edit_schedule_cell(tree, event, area, emp_file_path):
     col = tree.identify_column(event.x)
     if not item or not col:
         return
+    
+    col_idx = int(col.replace('#', '')) - 1
+    
+    # Don't allow editing the first column (Day/Shift headers)
+    if col_idx == 0:
+        return
+    
     cell_value = tree.set(item, col)
     names = [n.strip() for n in cell_value.split(',') if n.strip()]
+    logging.info(f"Editing {area} schedule cell ({item}, {col}) with current names: {names}")
     
     try:
         emp_df = pd.read_csv(emp_file_path, index_col="Employee/Input")
@@ -319,14 +331,14 @@ def generate_schedule(emp_path, req_path, limits_path, start_date_entry, num_wee
             
             for week in range(1, num_weeks + 1):
                 week_frame = tk.Frame(frame, name=f"week{week}")
-                week_frame.pack(pady=5, fill="both", expand=True)
+                week_frame.pack(pady=5, fill="both", expand=False)
                 week_start = start_date + datetime.timedelta(days=(week-1)*7)
                 week_end = week_start + datetime.timedelta(days=6)
                 tk.Label(week_frame, text=f"{area} Schedule - Week {week} ({week_start:%b %d, %Y} - {week_end:%b %d, %Y})").pack()
                 
                 tree_frame = ttk.Frame(week_frame)
-                tree_frame.pack(fill="both", expand=True)
-                tree = ttk.Treeview(tree_frame, show="headings")
+                tree_frame.pack(fill="both", expand=False)
+                tree = ttk.Treeview(tree_frame, show="headings", height=len(shifts))
                 vsb = ttk.Scrollbar(tree_frame, orient="vertical", command=tree.yview)
                 hsb = ttk.Scrollbar(tree_frame, orient="horizontal", command=tree.xview)
                 tree.configure(yscrollcommand=vsb.set, xscrollcommand=hsb.set)
@@ -452,7 +464,7 @@ def generate_schedule(emp_path, req_path, limits_path, start_date_entry, num_wee
             
             viz_canvas = FigureCanvasTkAgg(fig, master=viz_frame)
             viz_canvas.draw()
-            viz_canvas.get_tk_widget().pack(fill='both', expand=True)
+            viz_canvas.get_tk_widget().pack(fill='both', expand=False)
             
             viz_frame.figure = fig
         except Exception as e:
