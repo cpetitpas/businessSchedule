@@ -369,7 +369,7 @@ def generate_schedule(emp_path, req_path, limits_path, start_date_entry, num_wee
                                     new_value = f"{current}, {e}" if current else e
                                     tree.set(shift, day, new_value)
                 
-                tree.bind("<Double-1>", lambda e, t=tree: edit_schedule_cell(t, e, area, emp_path))
+                tree.bind("<Double-1>", lambda e, t=tree, a=area: edit_schedule_cell(t, e, a, emp_path))
             
             filename = f"{area}_schedule_{start_date:%Y-%m-%d}.csv"
             try:
