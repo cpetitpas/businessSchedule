@@ -3,9 +3,8 @@ from datetime import datetime, timedelta
 import logging
 import tkinter as tk
 from tkinter import ttk
-from constants import DAYS, SHIFTS
 
-def min_employees_to_avoid_weekend_violations(required, max_weekend_days, areas, num_weeks):
+def min_employees_to_avoid_weekend_violations(required, max_weekend_days, areas, num_weeks, shifts):
     """
     Calculate the minimum number of employees needed per area to avoid Max Number of Weekend Days violations,
     assuming each employee can work up to the maximum allowed weekend days observed in the data.
@@ -23,7 +22,7 @@ def min_employees_to_avoid_weekend_violations(required, max_weekend_days, areas,
         for window in fri_sun_windows:
             total_shifts = 0
             for w, d in window:
-                for s in SHIFTS:
+                for s in shifts:
                     total_shifts += required[d][area][s]
             min_for_window = math.ceil(total_shifts / max_possible)
             min_n = max(min_n, min_for_window)
