@@ -3,7 +3,6 @@ from datetime import datetime, timedelta
 import logging
 import tkinter as tk
 from tkinter import ttk
-from constants import DAYS
 
 def min_employees_to_avoid_weekend_violations(required, max_weekend_days, areas, num_weeks, shifts):
     """

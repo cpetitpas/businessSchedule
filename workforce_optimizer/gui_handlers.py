@@ -5,14 +5,18 @@ import datetime
 from tkcalendar import Calendar
 from solver import solve_schedule, validate_weekend_constraints
 from data_loader import load_csv
-from constants import DAYS, AREAS
+from constants import AREAS
 import pulp
 import math
 import logging
 import matplotlib.pyplot as plt
 import numpy as np
+import os
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from utils import min_employees_to_avoid_weekend_violations, adjust_column_widths
+
+logging.getLogger('matplotlib').setLevel(logging.WARNING)
+logging.getLogger('PIL').setLevel(logging.WARNING)
 
 # Global list to store Treeview widgets for dynamic column width adjustment
 all_input_trees = []
@@ -158,7 +162,7 @@ def on_tree_double_click(tree, event, has_index):
     
     # Don't allow editing the first column for tables with index (Employee Data, Personnel Required)
     # Only allow first column editing for Hard Limits (has_index=False)
-    if col_idx == 0 and has_index ==  False:
+    if col_idx == 0 and has_index:
         return
 
     current_value = tree.set(item, col_name)
@@ -258,11 +262,14 @@ def edit_schedule_cell(tree, event, area, emp_file_path):
 
 def save_schedule_changes(bar_frame, kitchen_frame, start_date, root):
     """
-    Save schedule changes to CSV files with overwrite prompt.
+    Save schedule changes to CSV files with overwrite prompt and option to save as a different filename.
     """
     save_messages = []
     start_date = datetime.datetime.strptime(start_date, "%Y-%m-%d").date() if isinstance(start_date, str) else start_date
     date_str = start_date.strftime("%Y-%m-%d")
+    day_names = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+    start_weekday = start_date.weekday()
+    actual_days = [day_names[(start_weekday + k) % 7] for k in range(7)]
     
     for area, frame in [("Bar", bar_frame), ("Kitchen", kitchen_frame)]:
         treeviews = find_treeviews(frame)
@@ -270,22 +277,73 @@ def save_schedule_changes(bar_frame, kitchen_frame, start_date, root):
             messagebox.showwarning("Warning", f"No schedule data for {area} to save.")
             continue
         
-        filename = f"{area}_schedule_{date_str}.csv"
-        if filedialog.askyesno("Overwrite?", f"File {filename} already exists. Overwrite?"):
-            try:
-                with open(filename, "w") as f:
-                    for tree in treeviews:
-                        week = int(tree.winfo_parent().split("week")[-1])
-                        f.write("Day/Shift," + ",".join(f'"{day}, {start_date + datetime.timedelta(days=(week-1)*7 + DAYS.index(day)):%b %d, %y}"' for day in DAYS) + "\n")
-                        for shift in tree["columns"][1:]:  # Skip Day/Shift column
-                            values = [shift] + [tree.set(shift, f"#{i+2}") for i in range(len(DAYS))]
-                            f.write(",".join(f'"{v}"' for v in values) + "\n")
-                        f.write("\n")
-                save_messages.append(f"Saved {area} schedule to {filename}")
-                logging.info(f"Saved {area} schedule to {filename}")
-            except Exception as e:
-                messagebox.showerror("Error", f"Failed to save {area} schedule: {e}")
-                logging.error(f"Failed to save {area} schedule: {str(e)}")
+        default_filename = f"{area}_schedule_{date_str}.csv"
+        filename = default_filename
+        
+        # Check if file exists before prompting
+        if os.path.exists(default_filename):
+            if not messagebox.askyesno("Overwrite?", f"File {default_filename} already exists. Overwrite?"):
+                # Create dialog for new filename
+                dialog = tk.Toplevel(root)
+                dialog.title(f"Save {area} Schedule As")
+                dialog.geometry("300x150")
+                
+                # Center the dialog relative to the root window
+                dialog.transient(root)
+                dialog.update_idletasks()
+                x = root.winfo_x() + (root.winfo_width() // 2) - (dialog.winfo_width() // 2)
+                y = root.winfo_y() + (root.winfo_height() // 2) - (dialog.winfo_height() // 2)
+                dialog.geometry(f"300x150+{x}+{y}")
+                
+                tk.Label(dialog, text="Enter filename:").pack(pady=5)
+                filename_entry = tk.Entry(dialog)
+                filename_entry.insert(0, default_filename)
+                filename_entry.pack(pady=5, fill="x", padx=10)
+                
+                save_clicked = [False]  # Use list to modify in nested function
+                def save_new_filename():
+                    nonlocal filename
+                    filename = filename_entry.get().strip()
+                    if not filename:
+                        messagebox.showerror("Error", "Filename cannot be empty.")
+                        return
+                    if not filename.lower().endswith(".csv"):
+                        filename += ".csv"
+                    save_clicked[0] = True
+                    dialog.destroy()
+                
+                def cancel_save():
+                    dialog.destroy()
+                
+                tk.Button(dialog, text="Save", command=save_new_filename).pack(pady=5)
+                tk.Button(dialog, text="Cancel", command=cancel_save).pack(pady=5)
+                
+                dialog.transient(root)
+                dialog.grab_set()
+                root.wait_window(dialog)
+                
+                if not save_clicked[0]:
+                    logging.info(f"User canceled saving {area} schedule.")
+                    continue  # Skip saving this area if canceled
+        
+        try:
+            with open(filename, "w") as f:
+                for tree in treeviews:
+                    parent_frame = tree.master.master  # Get the week_frame (parent of tree_frame)
+                    week_name = parent_frame.winfo_name()  # Get the name like 'week1'
+                    if not week_name.startswith("week"):
+                        raise ValueError(f"Unexpected frame name: {week_name}")
+                    week = int(week_name.replace("week", ""))
+                    f.write("Day/Shift," + ",".join(f'"{actual_days[k]}, {start_date + datetime.timedelta(days=(week-1)*7 + k):%b %d, %y}"' for k in range(7)) + "\n")
+                    for item in tree.get_children():  # Iterate over row IDs (shifts)
+                        values = [tree.set(item, "Day/Shift")] + [tree.set(item, actual_days[k]) for k in range(7)]
+                        f.write(",".join(f'"{v}"' for v in values) + "\n")
+                    f.write("\n")
+            save_messages.append(f"Saved {area} schedule to {filename}")
+            logging.info(f"Saved {area} schedule to {filename}")
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to save {area} schedule: {e}")
+            logging.error(f"Failed to save {area} schedule: {str(e)}")
     
     if save_messages:
         messagebox.showinfo("Success", "\n".join(save_messages))
@@ -305,13 +363,19 @@ def generate_schedule(emp_path, req_path, limits_path, start_date_entry, num_wee
         return
     
     try:
+        # Compute actual_days for consistency
+        day_names = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+        start_weekday = start_date.weekday()
+        actual_days = [day_names[(start_weekday + k) % 7] for k in range(7)]
+        day_offsets = range(7)
+        
         result = load_csv(emp_path, req_path, limits_path, start_date, num_weeks)
         if result is None:
             return
-        employees, days, shifts, areas, shift_prefs, day_prefs, must_off, required, work_areas, constraints, min_shifts, max_shifts, max_weekend_days = result
+        employees, _, shifts, areas, shift_prefs, day_prefs, must_off, required, work_areas, constraints, min_shifts, max_shifts, max_weekend_days = result
         
-        prob, x = solve_schedule(
-            employees, days, shifts, areas, shift_prefs, day_prefs, must_off, required, work_areas, constraints,
+        prob, x, result = solve_schedule(
+            employees, day_offsets, shifts, areas, shift_prefs, day_prefs, must_off, required, work_areas, constraints,
             min_shifts, max_shifts, max_weekend_days, start_date, num_weeks=num_weeks
         )
         
@@ -320,7 +384,7 @@ def generate_schedule(emp_path, req_path, limits_path, start_date_entry, num_wee
             logging.error("Solver failed to find an optimal solution: %s", pulp.LpStatus[prob.status])
             return
         
-        violations = validate_weekend_constraints(x, employees, days, shifts, work_areas, max_weekend_days, start_date, num_weeks)
+        violations = result.get("violations", [])
         violations_str = "Weekend constraint violations:\n" + ("\n".join(violations) if violations else "None")
         
         save_messages = []
@@ -349,25 +413,27 @@ def generate_schedule(emp_path, req_path, limits_path, start_date_entry, num_wee
                 tree_frame.columnconfigure(0, weight=1)
                 all_listboxes.append(tree)
                 
-                columns = ["Day/Shift"] + DAYS
+                columns = ["Day/Shift"] + actual_days
                 tree["columns"] = columns
                 tree.heading("Day/Shift", text="Day/Shift")
-                for day in DAYS:
-                    tree.heading(day, text=f"{day}, {week_start + datetime.timedelta(days=DAYS.index(day)):%b %d, %y}")
+                for k, day in enumerate(actual_days):
+                    tree.heading(day, text=f"{day}, {week_start + datetime.timedelta(days=k):%b %d, %y}")
                     tree.column(day, anchor="center", width=100)
                 tree.column("Day/Shift", anchor="w", width=100)
                 
                 for shift in shifts:
-                    tree.insert("", "end", shift, values=[shift] + [""] * len(DAYS))
+                    tree.insert("", "end", shift, values=[shift] + [""] * len(actual_days))
                 
-                for e in employees:
-                    if area in work_areas[e]:
-                        for d, day in enumerate(days):
-                            for s, shift in enumerate(shifts):
-                                if pulp.value(x[e][week-1][day][shift][area]) == 1:
-                                    current = tree.set(shift, day)
-                                    new_value = f"{current}, {e}" if current else e
-                                    tree.set(shift, day, new_value)
+                for entry in result[f"{area.lower()}_schedule"]:
+                    e, date_str, day, s, a = entry
+                    if a == area:
+                        week_idx = (datetime.datetime.strptime(date_str, "%Y-%m-%d").date() - start_date).days // 7 + 1
+                        if week_idx == week:
+                            k = (datetime.datetime.strptime(date_str, "%Y-%m-%d").date() - (start_date + datetime.timedelta(days=(week-1)*7))).days
+                            if 0 <= k < 7:
+                                current = tree.set(s, actual_days[k])
+                                new_value = f"{current}, {e}" if current else e
+                                tree.set(s, actual_days[k], new_value)
                 
                 tree.bind("<Double-1>", lambda e, t=tree, a=area: edit_schedule_cell(t, e, a, emp_path))
             
@@ -376,9 +442,9 @@ def generate_schedule(emp_path, req_path, limits_path, start_date_entry, num_wee
                 with open(filename, "w") as f:
                     for week in range(1, num_weeks + 1):
                         tree = find_treeviews(frame.winfo_children()[week-1])[0]
-                        f.write("Day/Shift," + ",".join(f'"{day}, {start_date + datetime.timedelta(days=(week-1)*7 + DAYS.index(day)):%b %d, %y}"' for day in DAYS) + "\n")
+                        f.write("Day/Shift," + ",".join(f'"{actual_days[k]}, {start_date + datetime.timedelta(days=(week-1)*7 + k):%b %d, %y}"' for k in range(7)) + "\n")
                         for shift in shifts:
-                            values = [shift] + [tree.set(shift, day) for day in DAYS]
+                            values = [shift] + [tree.set(shift, actual_days[k]) for k in range(7)]
                             f.write(",".join(f'"{v}"' for v in values) + "\n")
                         f.write("\n")
                 save_messages.append(f"Saved {area} schedule to {filename}")
@@ -393,7 +459,7 @@ def generate_schedule(emp_path, req_path, limits_path, start_date_entry, num_wee
         for e in employees:
             total_shifts = 0
             for w in range(num_weeks):
-                week_shifts = sum(pulp.value(x[e][w][d][s][a]) for d in days for s in shifts for a in work_areas[e])
+                week_shifts = sum(pulp.value(x[e][w][k][s][a]) for k in day_offsets for s in shifts for a in work_areas[e])
                 summary_df.loc[e, f"Week {w+1}"] = week_shifts
                 total_shifts += week_shifts
             summary_df.loc[e, "Total Shifts"] = total_shifts
@@ -411,7 +477,10 @@ def generate_schedule(emp_path, req_path, limits_path, start_date_entry, num_wee
         
         relaxed_rules = []
         if constraints["violate_order"]:
-            relaxed_rules = [rule for rule in constraints["violate_order"] if locals().get(f"relax_{rule.lower().replace(' ', '_')}")]
+            for rule in constraints["violate_order"]:
+                flag = f"relax_{rule.lower().replace(' ', '_')}"
+                if flag in locals() and locals()[flag]:
+                    relaxed_rules.append(rule)
         min_emps = min_employees_to_avoid_weekend_violations(required, max_weekend_days, areas, num_weeks, shifts)
         min_str = "Minimum employees needed to avoid weekend violations: " + ", ".join(f"{a}: {min_emps[a]}" for a in areas)
 
@@ -475,7 +544,7 @@ def generate_schedule(emp_path, req_path, limits_path, start_date_entry, num_wee
 
         adjust_column_widths(root, all_listboxes, all_input_trees, notebook, summary_text)
         
-        message = "\n".join(save_messages) + "\n\n" + violations_str
+        message = "\n".join(save_messages) + "\n\n" + violations_str + "\n\n" + result["employee_summary"]
         messagebox.showinfo("Schedule Generation Complete", message)
     except Exception as e:
         messagebox.showerror("Error", f"Failed to generate schedule: {str(e)}")
