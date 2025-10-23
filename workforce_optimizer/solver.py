@@ -65,13 +65,30 @@ def add_constraints(prob, x, y, employees, day_offsets, shifts, areas, required,
         for w in range(num_weeks):
             prob += pulp.lpSum(x[e][w][k][s][a] for k in day_offsets for s in shifts for a in work_areas[e]) >= min_shifts[e] - (2 if relax_min_shifts else 0)
     
-    # Max weekend days (Fri-Sun)
+    # Max weekend days (Fri-Sat-Sun), using calendar-based grouping
     if not relax_weekend:
+        end_date = start_date + timedelta(days=7 * num_weeks - 1)
+        current_date = start_date - timedelta(days=6)  # Start earlier to catch spanning weekends
+        weekends = []
+        while current_date <= end_date + timedelta(days=2):
+            if current_date.weekday() == 4:  # Friday
+                fri = current_date
+                sat = fri + timedelta(days=1)
+                sun = fri + timedelta(days=2)
+                weekend_days = []
+                for d in [fri, sat, sun]:
+                    if start_date <= d <= end_date:
+                        days_since_start = (d - start_date).days
+                        w = days_since_start // 7
+                        k = days_since_start % 7
+                        weekend_days.append((w, k))
+                if weekend_days:
+                    weekends.append(weekend_days)
+            current_date += timedelta(days=1)
+        
         for e in employees:
-            for w in range(num_weeks):
-                fri_sun_days = ["Fri", "Sat"] if w == num_weeks - 1 else ["Fri", "Sat", "Sun"]
-                fri_sun = [k for k in day_offsets if actual_days[k] in fri_sun_days]
-                prob += pulp.lpSum(y[e][w][k] for k in fri_sun) <= max_weekend_days[e]
+            for weekend in weekends:
+                prob += pulp.lpSum(y[e][w][k] for w, k in weekend) <= max_weekend_days[e]
     
     # Link y to x
     for e in employees:
@@ -81,17 +98,35 @@ def add_constraints(prob, x, y, employees, day_offsets, shifts, areas, required,
 
 def validate_weekend_constraints(x, employees, day_offsets, shifts, work_areas, max_weekend_days, start_date, num_weeks, actual_days):
     violations = []
-    fri_sun_windows = [[(w, k) for k in day_offsets if actual_days[k] in (["Fri", "Sat", "Sun"] if w < num_weeks - 1 else ["Fri", "Sat"])] for w in range(num_weeks)]
+    end_date = start_date + timedelta(days=7 * num_weeks - 1)
+    current_date = start_date - timedelta(days=6)  # Start earlier to catch spanning weekends
+    weekends = []
+    while current_date <= end_date + timedelta(days=2):
+        if current_date.weekday() == 4:  # Friday
+            fri = current_date
+            sat = fri + timedelta(days=1)
+            sun = fri + timedelta(days=2)
+            weekend_days = []
+            for d in [fri, sat, sun]:
+                if start_date <= d <= end_date:
+                    days_since_start = (d - start_date).days
+                    w = days_since_start // 7
+                    k = days_since_start % 7
+                    weekend_days.append((w, k))
+            if weekend_days:
+                weekends.append(weekend_days)
+        current_date += timedelta(days=1)
+    
     for e in employees:
-        for i, window in enumerate(fri_sun_windows):
+        for weekend in weekends:
             day_counts = sum(
                 1 if sum(pulp.value(x[e][w][k][s][a]) or 0 for s in shifts for a in work_areas[e]) >= 0.5 else 0
-                for w, k in window
+                for w, k in weekend
             )
             if day_counts > max_weekend_days[e]:
                 window_dates = " to ".join(
                     f"{actual_days[k]}, {(start_date + timedelta(days=(w * 7 + k))).strftime('%b %d, %Y')}"
-                    for w, k in window
+                    for w, k in weekend
                 )
                 violations.append(f"{e} has {day_counts} weekend days in period {window_dates}, exceeding limit of {max_weekend_days[e]}")
     return violations
