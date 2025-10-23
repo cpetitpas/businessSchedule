@@ -41,7 +41,7 @@ def min_employees_to_avoid_weekend_violations(max_weekend_days, areas, violation
     # Format the summary string
     summary = "Employee Summary (Current vs Required):\n"
     for area in areas:
-        summary += f"- {area}: {current_employees[area]} employees available, {required_employees[area]} employees required\n"
+        summary += f"- {area}: {current_employees[area]} current employees, {required_employees[area]} employees required to avoid weekend violations\n"
     
     return required_employees, summary
 
