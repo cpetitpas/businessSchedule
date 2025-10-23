@@ -21,6 +21,32 @@ root = tk.Tk()
 root.title("Workforce Optimizer")
 root.geometry(DEFAULT_GEOMETRY)
 
+# Hide the root window initially
+root.withdraw()
+
+def show_disclaimer(parent):
+    """
+    Display a standard disclaimer/security statement when the application starts.
+    """
+    disclaimer_text = (
+        "DISCLAIMER AND SECURITY STATEMENT\n\n"
+        "This Workforce Optimizer application is provided 'as is' without any warranties, express or implied, "
+        "including but not limited to warranties of merchantability, fitness for a particular purpose, or non-infringement. "
+        "The developers and contributors are not responsible for any damages, losses, or liabilities arising from the use of this software, "
+        "including but not limited to direct, indirect, incidental, or consequential damages.\n\n"
+        "This software is licensed for use by the original recipient only and is non-transferable. "
+        "All rights are reserved by the developers. Unauthorized distribution, modification, or commercial use is prohibited.\n\n"
+        "For support or inquiries, contact chris070411@gmail.com.\n\n"
+        "By using this application, you agree to these terms."
+    )
+    messagebox.showinfo("Disclaimer", disclaimer_text, parent=parent)
+
+# Show disclaimer before rendering the main window
+show_disclaimer(root)
+
+# Restore the root window after disclaimer is dismissed
+root.deiconify()
+
 # Create canvas and scrollbar
 canvas = tk.Canvas(root)
 scrollbar = ttk.Scrollbar(root, orient="vertical", command=canvas.yview)
@@ -61,7 +87,7 @@ viz_frame = None
 def setup_gui():
     global start_date_entry, bar_frame, kitchen_frame, emp_frame, req_frame, limits_frame, notebook, summary_text, viz_frame
     from tkcalendar import DateEntry
-    # Start date selection
+   # Start date selection
     tk.Label(scrollable_frame, text="Select Start Date:").pack(pady=5)
     start_date_entry = DateEntry(scrollable_frame, width=12, background='darkblue', foreground='white', borderwidth=2, year=2025, firstweekday='sunday', showweeknumbers=False)
     start_date_entry.pack(pady=5)
