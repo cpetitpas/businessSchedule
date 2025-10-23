@@ -481,8 +481,9 @@ def generate_schedule(emp_path, req_path, limits_path, start_date_entry, num_wee
                 flag = f"relax_{rule.lower().replace(' ', '_')}"
                 if flag in locals() and locals()[flag]:
                     relaxed_rules.append(rule)
-        min_emps = min_employees_to_avoid_weekend_violations(required, max_weekend_days, areas, num_weeks, shifts)
-        min_str = "Minimum employees needed to avoid weekend violations: " + ", ".join(f"{a}: {min_emps[a]}" for a in areas)
+        
+        # Calculate minimum employees needed based on violations
+        min_emps, min_str = min_employees_to_avoid_weekend_violations(max_weekend_days, areas, violations, work_areas, employees)
 
         summary_text.delete(1.0, tk.END)
         if relaxed_rules:
@@ -544,7 +545,7 @@ def generate_schedule(emp_path, req_path, limits_path, start_date_entry, num_wee
 
         adjust_column_widths(root, all_listboxes, all_input_trees, notebook, summary_text)
         
-        message = "\n".join(save_messages) + "\n\n" + violations_str + "\n\n" + result["employee_summary"]
+        message = "\n".join(save_messages) + "\n\n" + violations_str + "\n\n" + min_str
         messagebox.showinfo("Schedule Generation Complete", message)
     except Exception as e:
         messagebox.showerror("Error", f"Failed to generate schedule: {str(e)}")
