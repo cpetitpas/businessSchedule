@@ -469,7 +469,7 @@ def save_schedule_changes(bar_frame, kitchen_frame, start_date, root):
 
 def generate_schedule(emp_path, req_path, limits_path, start_date_entry, num_weeks_var, bar_frame, kitchen_frame, summary_text, viz_frame, root, notebook):
     """
-    Generate and display schedules for Bar and Kitchen.
+    Generate and display schedules for Bar and Kitchen, with visualizations by week and work area.
     """
     global all_listboxes
     all_listboxes = []
@@ -570,17 +570,27 @@ def generate_schedule(emp_path, req_path, limits_path, start_date_entry, num_wee
                 messagebox.showerror("Error", f"Failed to save {area} schedule: {e}")
                 logging.error(f"Failed to save {area} schedule: {str(e)}")
         
+        # Calculate shift counts from result[f"{area.lower()}_schedule"]
         summary_df = pd.DataFrame(index=employees, columns=["Employee", "Total Shifts"] + [f"Week {i+1}" for i in range(num_weeks)])
         summary_df["Employee"] = employees
         overall_total_shifts = 0
+        shift_counts = {e: {w: 0 for w in range(num_weeks)} for e in employees}
+        
+        for area in areas:
+            for entry in result[f"{area.lower()}_schedule"]:
+                e, date_str, day, s, a = entry
+                if a == area:
+                    week_idx = (datetime.datetime.strptime(date_str, "%Y-%m-%d").date() - start_date).days // 7
+                    if 0 <= week_idx < num_weeks:
+                        shift_counts[e][week_idx] += 1
+        
         for e in employees:
-            total_shifts = 0
+            total_shifts = sum(shift_counts[e][w] for w in range(num_weeks))
             for w in range(num_weeks):
-                week_shifts = sum(pulp.value(x[e][w][k][s][a]) for k in day_offsets for s in shifts for a in work_areas[e])
-                summary_df.loc[e, f"Week {w+1}"] = week_shifts
-                total_shifts += week_shifts
-            summary_df.loc[e, "Total Shifts"] = total_shifts
+                summary_df.loc[e, f"Week {w+1}"] = int(shift_counts[e][w])  # Ensure integer
+            summary_df.loc[e, "Total Shifts"] = int(total_shifts)  # Ensure integer
             overall_total_shifts += total_shifts
+        
         summary_df = summary_df.sort_values("Employee")
         
         summary_filename = f"Summary_report_{start_date:%Y-%m-%d}.csv"
@@ -620,32 +630,78 @@ def generate_schedule(emp_path, req_path, limits_path, start_date_entry, num_wee
             for child in viz_frame.winfo_children():
                 child.destroy()
             
-            fig_width = max(10, len(employees) * 0.5)
-            fig, axs = plt.subplots(1, 2, figsize=(fig_width + 5, 6), gridspec_kw={'width_ratios': [3, 1]})
+            # Filter active employees (non-zero shifts)
+            active_employees = [e for e in employees if summary_df.loc[e, "Total Shifts"] > 0]
+            fig_width = max(10, len(active_employees) * 0.5)
+            fig, axs = plt.subplots(2, 2, figsize=(fig_width + 5, 10), gridspec_kw={'width_ratios': [3, 1], 'height_ratios': [1, 1]})
             
             colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728']
+            
+            # Plot 1: Shifts per Employee (Stacked by Week)
             week_data = {f'Week {i+1}': [] for i in range(num_weeks)}
-            for _, row in summary_df.iterrows():
+            for e in active_employees:
+                row = summary_df.loc[e]
                 for i in range(num_weeks):
-                    week_data[f'Week {i+1}'].append(row[f'Week {i+1}'])
+                    value = int(row[f'Week {i+1}'])
+                    week_data[f'Week {i+1}'].append(value)
             
-            bottom = np.zeros(len(employees))
+            logging.info(f"Week visualization week_data: {week_data}")
+            
+            bottom = np.zeros(len(active_employees))
             for i, (week, data) in enumerate(week_data.items()):
-                axs[0].bar(employees, data, label=week, bottom=bottom, color=colors[i % len(colors)])
-                bottom += np.array(data)
+                axs[0, 0].bar(active_employees, data, label=week, bottom=bottom, color=colors[i % len(colors)])
+                bottom += np.array(data, dtype=float)
             
-            axs[0].set_xlabel('Employees')
-            axs[0].set_ylabel('Shifts')
-            axs[0].set_title('Shifts per Employee (Stacked by Week)')
-            axs[0].legend()
-            axs[0].tick_params(axis='x', rotation=45, labelsize=8)
+            axs[0, 0].set_xlabel('Employees')
+            axs[0, 0].set_ylabel('Shifts')
+            axs[0, 0].set_title('Shifts per Employee (Stacked by Week)')
+            axs[0, 0].legend()
+            axs[0, 0].tick_params(axis='x', rotation=45, labelsize=8)
             
+            # Plot 2: Total Shifts per Week
             total_per_week = [sum(week_data[week]) for week in week_data]
-            axs[1].bar(week_data.keys(), total_per_week, color=colors[:len(week_data)])
-            axs[1].set_xlabel('Weeks')
-            axs[1].set_ylabel('Total Shifts')
-            axs[1].set_title('Total Shifts per Week')
-            axs[1].tick_params(axis='x', rotation=45)
+            logging.info(f"Week visualization total_per_week: {total_per_week}")
+            
+            axs[0, 1].bar(week_data.keys(), total_per_week, color=colors[:len(week_data)])
+            axs[0, 1].set_xlabel('Weeks')
+            axs[0, 1].set_ylabel('Total Shifts')
+            axs[0, 1].set_title('Total Shifts per Week')
+            axs[0, 1].tick_params(axis='x', rotation=45)
+            
+            # Plot 3: Shifts per Employee (Stacked by Work Area)
+            area_data = {area: [] for area in areas}
+            area_shift_counts = {e: {a: 0 for a in areas} for e in employees}
+            for area in areas:
+                for entry in result[f"{area.lower()}_schedule"]:
+                    e, _, _, _, a = entry
+                    if a == area:
+                        area_shift_counts[e][area] += 1
+            for e in active_employees:
+                for area in areas:
+                    area_data[area].append(int(area_shift_counts[e][area]))
+            
+            logging.info(f"Area visualization area_data: {area_data}")
+            
+            bottom = np.zeros(len(active_employees))
+            for i, (area, data) in enumerate(area_data.items()):
+                axs[1, 0].bar(active_employees, data, label=area, bottom=bottom, color=colors[i % len(colors)])
+                bottom += np.array(data, dtype=float)
+            
+            axs[1, 0].set_xlabel('Employees')
+            axs[1, 0].set_ylabel('Shifts')
+            axs[1, 0].set_title('Shifts per Employee (Stacked by Work Area)')
+            axs[1, 0].legend()
+            axs[1, 0].tick_params(axis='x', rotation=45, labelsize=8)
+            
+            # Plot 4: Total Shifts per Work Area
+            total_per_area = [sum(area_data[area]) for area in areas]
+            logging.info(f"Area visualization total_per_area: {total_per_area}")
+            
+            axs[1, 1].bar(areas, total_per_area, color=colors[:len(areas)])
+            axs[1, 1].set_xlabel('Work Areas')
+            axs[1, 1].set_ylabel('Total Shifts')
+            axs[1, 1].set_title('Total Shifts per Work Area')
+            axs[1, 1].tick_params(axis='x', rotation=45)
             
             plt.tight_layout()
             
