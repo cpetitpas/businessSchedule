@@ -119,7 +119,7 @@ def setup_gui():
     tk.Button(scrollable_frame, text="View Input Data", command=lambda: display_input_data(emp_file_var.get(), req_file_var.get(), limits_file_var.get(), emp_frame, req_frame, limits_frame, root, notebook, summary_text)).pack(pady=5)
 
     # Save Input Data button
-    tk.Button(scrollable_frame, text="Save Input Data", command=lambda: save_input_data(emp_file_var.get(), req_file_var.get(), limits_file_var.get(), emp_frame, req_frame, limits_frame)).pack(pady=5)
+    tk.Button(scrollable_frame, text="Save Input Data", command=lambda: save_input_data(emp_file_var.get(), req_file_var.get(), limits_file_var.get(), emp_frame, req_frame, limits_frame, root)).pack(pady=5)
 
     # Input data tabs
     notebook = ttk.Notebook(scrollable_frame)
@@ -163,6 +163,9 @@ def setup_gui():
     summary_frame.rowconfigure(0, weight=1)
     summary_frame.columnconfigure(0, weight=1)
 
+    # Generate button
+    tk.Button(scrollable_frame, text="Generate Schedule", command=lambda: generate_schedule(emp_file_var.get(), req_file_var.get(), limits_file_var.get(), start_date_entry, num_weeks_var, bar_frame, kitchen_frame, summary_text, viz_frame, root, notebook)).pack(pady=10)
+
     # Schedule display frames
     tk.Label(scrollable_frame, text="Bar Schedule").pack(pady=5)
     bar_frame = tk.Frame(scrollable_frame)
@@ -172,16 +175,13 @@ def setup_gui():
     kitchen_frame = tk.Frame(scrollable_frame)
     kitchen_frame.pack(pady=5, fill="both", expand=True)
 
+    # Save Schedule Changes button
+    tk.Button(scrollable_frame, text="Save Schedule Changes", command=lambda: save_schedule_changes(bar_frame, kitchen_frame, start_date_entry.get_date(), root)).pack(pady=10)
+
     # Visualization frame
     tk.Label(scrollable_frame, text="Visualizations").pack(pady=5)
     viz_frame = tk.Frame(scrollable_frame)
     viz_frame.pack(pady=5, fill="both", expand=True)
-
-    # Generate button
-    tk.Button(scrollable_frame, text="Generate Schedule", command=lambda: generate_schedule(emp_file_var.get(), req_file_var.get(), limits_file_var.get(), start_date_entry, num_weeks_var, bar_frame, kitchen_frame, summary_text, viz_frame, root, notebook)).pack(pady=10)
-
-    # Save Schedule Changes button
-    tk.Button(scrollable_frame, text="Save Schedule Changes", command=lambda: save_schedule_changes(bar_frame, kitchen_frame, start_date_entry.get_date(), root)).pack(pady=10)
 
 # Main execution
 if __name__ == "__main__":

@@ -103,9 +103,9 @@ def display_input_data(emp_path, req_path, limits_path, emp_frame, req_frame, li
 
     adjust_column_widths(root, all_listboxes, all_input_trees, notebook, summary_text)
 
-def save_input_data(emp_path, req_path, limits_path, emp_frame, req_frame, limits_frame):
+def save_input_data(emp_path, req_path, limits_path, emp_frame, req_frame, limits_frame, root):
     """
-    Save the edited data from Treeview widgets back to their respective CSV files.
+    Save the edited data from Treeview widgets back to their respective CSV files with overwrite prompt and option to save as a different filename.
     """
     def tree_to_df(tree, has_index=True):
         columns = tree["columns"]
@@ -122,28 +122,96 @@ def save_input_data(emp_path, req_path, limits_path, emp_frame, req_frame, limit
             return pd.DataFrame(data, index=index, columns=columns[1:])
         return pd.DataFrame(data, columns=columns)
 
+    def get_save_filename(default_path, file_type):
+        """Get filename with overwrite check and new filename option."""
+        if os.path.exists(default_path):
+            if not messagebox.askyesno("Overwrite?", f"File {default_path} already exists. Overwrite?"):
+                # Create dialog for new filename
+                dialog = tk.Toplevel(root)
+                dialog.title(f"Save {file_type} As")
+                dialog.geometry("400x150")
+                
+                # Center the dialog relative to the root window
+                dialog.transient(root)
+                dialog.update_idletasks()
+                x = root.winfo_x() + (root.winfo_width() // 2) - (dialog.winfo_width() // 2)
+                y = root.winfo_y() + (root.winfo_height() // 2) - (dialog.winfo_height() // 2)
+                dialog.geometry(f"400x150+{x}+{y}")
+                
+                tk.Label(dialog, text="Enter filename:").pack(pady=5)
+                filename_entry = tk.Entry(dialog)
+                filename_entry.insert(0, default_path)
+                filename_entry.pack(pady=5, fill="x", padx=10)
+                
+                save_clicked = [False]  # Use list to modify in nested function
+                def save_new_filename():
+                    nonlocal default_path
+                    filename = filename_entry.get().strip()
+                    if not filename:
+                        messagebox.showerror("Error", "Filename cannot be empty.")
+                        return
+                    if not filename.lower().endswith(".csv"):
+                        filename += ".csv"
+                    default_path = filename
+                    save_clicked[0] = True
+                    dialog.destroy()
+                
+                def cancel_save():
+                    save_clicked[0] = None  # Indicate cancellation
+                    dialog.destroy()
+                
+                tk.Button(dialog, text="Save", command=save_new_filename).pack(pady=5)
+                tk.Button(dialog, text="Cancel", command=cancel_save).pack(pady=5)
+                
+                dialog.transient(root)
+                dialog.grab_set()
+                root.wait_window(dialog)
+                
+                if save_clicked[0] is None:
+                    return None  # User canceled
+        
+        return default_path
+
+    save_messages = []
+    
     try:
+        # Employee Data
         emp_tree = next((w for w in emp_frame.winfo_children()[0].winfo_children() if isinstance(w, ttk.Treeview)), None)
         if emp_tree:
-            emp_df = tree_to_df(emp_tree, has_index=True)
-            emp_df.index.name = "Employee/Input"
-            emp_df.to_csv(emp_path)
-            logging.info(f"Saved Employee Data to {emp_path}")
+            filename = get_save_filename(emp_path, "Employee Data")
+            if filename:
+                emp_df = tree_to_df(emp_tree, has_index=True)
+                emp_df.index.name = "Employee/Input"
+                emp_df.to_csv(filename)
+                save_messages.append(f"Saved Employee Data to {filename}")
+                logging.info(f"Saved Employee Data to {filename}")
 
+        # Personnel Required
         req_tree = next((w for w in req_frame.winfo_children()[0].winfo_children() if isinstance(w, ttk.Treeview)), None)
         if req_tree:
-            req_df = tree_to_df(req_tree, has_index=True)
-            req_df.index.name = "Day/Required"
-            req_df.to_csv(req_path)
-            logging.info(f"Saved Personnel Required to {req_path}")
+            filename = get_save_filename(req_path, "Personnel Required")
+            if filename:
+                req_df = tree_to_df(req_tree, has_index=True)
+                req_df.index.name = "Day/Required"
+                req_df.to_csv(filename)
+                save_messages.append(f"Saved Personnel Required to {filename}")
+                logging.info(f"Saved Personnel Required to {filename}")
 
+        # Hard Limits
         limits_tree = next((w for w in limits_frame.winfo_children()[0].winfo_children() if isinstance(w, ttk.Treeview)), None)
         if limits_tree:
-            limits_df = tree_to_df(limits_tree, has_index=False)
-            limits_df.to_csv(limits_path, index=False)
-            logging.info(f"Saved Hard Limits to {limits_path}")
+            filename = get_save_filename(limits_path, "Hard Limits")
+            if filename:
+                limits_df = tree_to_df(limits_tree, has_index=False)
+                limits_df.to_csv(filename, index=False)
+                save_messages.append(f"Saved Hard Limits to {filename}")
+                logging.info(f"Saved Hard Limits to {filename}")
 
-        messagebox.showinfo("Success", "Input data saved successfully to CSV files.")
+        if save_messages:
+            messagebox.showinfo("Success", "\n".join(save_messages))
+        else:
+            messagebox.showwarning("Warning", "No input data was saved.")
+            
     except Exception as e:
         logging.error(f"Failed to save input data: {str(e)}")
         messagebox.showerror("Error", f"Failed to save input data: {str(e)}")
@@ -196,7 +264,13 @@ def edit_schedule_cell(tree, event, area, emp_file_path):
     if col_idx == 0:
         return
     
+    # Highlight the selected cell
+    tree.selection_set(item)
+    tree.focus(item)
+    
     cell_value = tree.set(item, col)
+    col_name = tree.heading(col)['text']  # Get the column header text (includes date)
+    shift_name = tree.set(item, tree["columns"][0])  # Get the shift name
     names = [n.strip() for n in cell_value.split(',') if n.strip()]
     logging.info(f"Editing {area} schedule cell ({item}, {col}) with current names: {names}")
     
@@ -211,9 +285,34 @@ def edit_schedule_cell(tree, event, area, emp_file_path):
         messagebox.showerror("Error", f"Failed to load employee data from {emp_file_path}: {e}")
         return
     
+    # Position dialog near cursor
+    root_window = tree.winfo_toplevel()
+    cursor_x = root_window.winfo_pointerx()
+    cursor_y = root_window.winfo_pointery()
+    
     dialog = tk.Toplevel()
     dialog.title(f"Edit Employees - {area}")
-    dialog.geometry("300x400")
+    dialog.geometry("350x450")
+    
+    # Position near cursor, but ensure it stays on screen
+    screen_width = dialog.winfo_screenwidth()
+    screen_height = dialog.winfo_screenheight()
+    dialog_width = 350
+    dialog_height = 450
+    
+    # Adjust position to keep dialog on screen
+    x = min(cursor_x + 10, screen_width - dialog_width)
+    y = min(cursor_y + 10, screen_height - dialog_height)
+    x = max(0, x)
+    y = max(0, y)
+    
+    dialog.geometry(f"{dialog_width}x{dialog_height}+{x}+{y}")
+    
+    # Add date and shift information
+    info_frame = tk.Frame(dialog)
+    info_frame.pack(pady=5)
+    tk.Label(info_frame, text=f"Shift: {shift_name}", font=("Arial", 10, "bold")).pack()
+    tk.Label(info_frame, text=f"Date: {col_name}", font=("Arial", 9)).pack()
     
     tk.Label(dialog, text="Current Employees:").pack(pady=5)
     lb = tk.Listbox(dialog, height=10)
@@ -224,10 +323,22 @@ def edit_schedule_cell(tree, event, area, emp_file_path):
     def add_employee():
         add_win = tk.Toplevel(dialog)
         add_win.title("Add Employee")
-        add_win.geometry("200x150")
+        add_win.geometry("250x200")
+        
+        # Position add dialog relative to main dialog
+        dialog_x = dialog.winfo_x()
+        dialog_y = dialog.winfo_y()
+        add_win.geometry(f"250x200+{dialog_x + 50}+{dialog_y + 50}")
+        
+        info_frame = tk.Frame(add_win)
+        info_frame.pack(pady=5)
+        tk.Label(info_frame, text=f"Shift: {shift_name}", font=("Arial", 10, "bold")).pack()
+        tk.Label(info_frame, text=f"Date: {col_name}", font=("Arial", 9)).pack()
+        
         tk.Label(add_win, text="Select Employee:").pack(pady=5)
         combo = ttk.Combobox(add_win, values=sorted([n for n in available if n not in names]))
         combo.pack(pady=5)
+        
         def confirm_add():
             new_name = combo.get()
             if new_name:
@@ -239,7 +350,11 @@ def edit_schedule_cell(tree, event, area, emp_file_path):
                 else:
                     messagebox.showwarning("Warning", f"{new_name} is already assigned to this shift.")
             add_win.destroy()
-        tk.Button(add_win, text="Add", command=confirm_add).pack(pady=5)
+        
+        button_frame = tk.Frame(add_win)
+        button_frame.pack(pady=10)
+        tk.Button(button_frame, text="Add", command=confirm_add).pack(side=tk.LEFT, padx=5)
+        tk.Button(button_frame, text="Cancel", command=add_win.destroy).pack(side=tk.LEFT, padx=5)
     
     def delete_employee():
         sel = lb.curselection()
@@ -256,9 +371,11 @@ def edit_schedule_cell(tree, event, area, emp_file_path):
         tree.set(item, col, new_value)
         logging.info(f"Updated {area} schedule cell ({item}, {col}) to '{new_value}'")
     
-    tk.Button(dialog, text="Add Employee", command=add_employee).pack(pady=5)
-    tk.Button(dialog, text="Delete Employee", command=delete_employee).pack(pady=5)
-    tk.Button(dialog, text="Close", command=dialog.destroy).pack(pady=5)
+    button_frame = tk.Frame(dialog)
+    button_frame.pack(pady=10)
+    tk.Button(button_frame, text="Add Employee", command=add_employee).pack(side=tk.LEFT, padx=5)
+    tk.Button(button_frame, text="Delete Employee", command=delete_employee).pack(side=tk.LEFT, padx=5)
+    tk.Button(button_frame, text="Close", command=dialog.destroy).pack(side=tk.LEFT, padx=5)
 
 def save_schedule_changes(bar_frame, kitchen_frame, start_date, root):
     """
@@ -352,7 +469,7 @@ def save_schedule_changes(bar_frame, kitchen_frame, start_date, root):
 
 def generate_schedule(emp_path, req_path, limits_path, start_date_entry, num_weeks_var, bar_frame, kitchen_frame, summary_text, viz_frame, root, notebook):
     """
-    Generate and display schedules for Bar and Kitchen.
+    Generate and display schedules for Bar and Kitchen, with visualizations by week and work area.
     """
     global all_listboxes
     all_listboxes = []
@@ -453,17 +570,27 @@ def generate_schedule(emp_path, req_path, limits_path, start_date_entry, num_wee
                 messagebox.showerror("Error", f"Failed to save {area} schedule: {e}")
                 logging.error(f"Failed to save {area} schedule: {str(e)}")
         
+        # Calculate shift counts from result[f"{area.lower()}_schedule"]
         summary_df = pd.DataFrame(index=employees, columns=["Employee", "Total Shifts"] + [f"Week {i+1}" for i in range(num_weeks)])
         summary_df["Employee"] = employees
         overall_total_shifts = 0
+        shift_counts = {e: {w: 0 for w in range(num_weeks)} for e in employees}
+        
+        for area in areas:
+            for entry in result[f"{area.lower()}_schedule"]:
+                e, date_str, day, s, a = entry
+                if a == area:
+                    week_idx = (datetime.datetime.strptime(date_str, "%Y-%m-%d").date() - start_date).days // 7
+                    if 0 <= week_idx < num_weeks:
+                        shift_counts[e][week_idx] += 1
+        
         for e in employees:
-            total_shifts = 0
+            total_shifts = sum(shift_counts[e][w] for w in range(num_weeks))
             for w in range(num_weeks):
-                week_shifts = sum(pulp.value(x[e][w][k][s][a]) for k in day_offsets for s in shifts for a in work_areas[e])
-                summary_df.loc[e, f"Week {w+1}"] = week_shifts
-                total_shifts += week_shifts
-            summary_df.loc[e, "Total Shifts"] = total_shifts
+                summary_df.loc[e, f"Week {w+1}"] = int(shift_counts[e][w])  # Ensure integer
+            summary_df.loc[e, "Total Shifts"] = int(total_shifts)  # Ensure integer
             overall_total_shifts += total_shifts
+        
         summary_df = summary_df.sort_values("Employee")
         
         summary_filename = f"Summary_report_{start_date:%Y-%m-%d}.csv"
@@ -503,32 +630,78 @@ def generate_schedule(emp_path, req_path, limits_path, start_date_entry, num_wee
             for child in viz_frame.winfo_children():
                 child.destroy()
             
-            fig_width = max(10, len(employees) * 0.5)
-            fig, axs = plt.subplots(1, 2, figsize=(fig_width + 5, 6), gridspec_kw={'width_ratios': [3, 1]})
+            # Filter active employees (non-zero shifts)
+            active_employees = [e for e in employees if summary_df.loc[e, "Total Shifts"] > 0]
+            fig_width = max(10, len(active_employees) * 0.5)
+            fig, axs = plt.subplots(2, 2, figsize=(fig_width + 5, 10), gridspec_kw={'width_ratios': [3, 1], 'height_ratios': [1, 1]})
             
             colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728']
+            
+            # Plot 1: Shifts per Employee (Stacked by Week)
             week_data = {f'Week {i+1}': [] for i in range(num_weeks)}
-            for _, row in summary_df.iterrows():
+            for e in active_employees:
+                row = summary_df.loc[e]
                 for i in range(num_weeks):
-                    week_data[f'Week {i+1}'].append(row[f'Week {i+1}'])
+                    value = int(row[f'Week {i+1}'])
+                    week_data[f'Week {i+1}'].append(value)
             
-            bottom = np.zeros(len(employees))
+            logging.info(f"Week visualization week_data: {week_data}")
+            
+            bottom = np.zeros(len(active_employees))
             for i, (week, data) in enumerate(week_data.items()):
-                axs[0].bar(employees, data, label=week, bottom=bottom, color=colors[i % len(colors)])
-                bottom += np.array(data)
+                axs[0, 0].bar(active_employees, data, label=week, bottom=bottom, color=colors[i % len(colors)])
+                bottom += np.array(data, dtype=float)
             
-            axs[0].set_xlabel('Employees')
-            axs[0].set_ylabel('Shifts')
-            axs[0].set_title('Shifts per Employee (Stacked by Week)')
-            axs[0].legend()
-            axs[0].tick_params(axis='x', rotation=45, labelsize=8)
+            axs[0, 0].set_xlabel('Employees')
+            axs[0, 0].set_ylabel('Shifts')
+            axs[0, 0].set_title('Shifts per Employee (Stacked by Week)')
+            axs[0, 0].legend()
+            axs[0, 0].tick_params(axis='x', rotation=45, labelsize=8)
             
+            # Plot 2: Total Shifts per Week
             total_per_week = [sum(week_data[week]) for week in week_data]
-            axs[1].bar(week_data.keys(), total_per_week, color=colors[:len(week_data)])
-            axs[1].set_xlabel('Weeks')
-            axs[1].set_ylabel('Total Shifts')
-            axs[1].set_title('Total Shifts per Week')
-            axs[1].tick_params(axis='x', rotation=45)
+            logging.info(f"Week visualization total_per_week: {total_per_week}")
+            
+            axs[0, 1].bar(week_data.keys(), total_per_week, color=colors[:len(week_data)])
+            axs[0, 1].set_xlabel('Weeks')
+            axs[0, 1].set_ylabel('Total Shifts')
+            axs[0, 1].set_title('Total Shifts per Week')
+            axs[0, 1].tick_params(axis='x', rotation=45)
+            
+            # Plot 3: Shifts per Employee (Stacked by Work Area)
+            area_data = {area: [] for area in areas}
+            area_shift_counts = {e: {a: 0 for a in areas} for e in employees}
+            for area in areas:
+                for entry in result[f"{area.lower()}_schedule"]:
+                    e, _, _, _, a = entry
+                    if a == area:
+                        area_shift_counts[e][area] += 1
+            for e in active_employees:
+                for area in areas:
+                    area_data[area].append(int(area_shift_counts[e][area]))
+            
+            logging.info(f"Area visualization area_data: {area_data}")
+            
+            bottom = np.zeros(len(active_employees))
+            for i, (area, data) in enumerate(area_data.items()):
+                axs[1, 0].bar(active_employees, data, label=area, bottom=bottom, color=colors[i % len(colors)])
+                bottom += np.array(data, dtype=float)
+            
+            axs[1, 0].set_xlabel('Employees')
+            axs[1, 0].set_ylabel('Shifts')
+            axs[1, 0].set_title('Shifts per Employee (Stacked by Work Area)')
+            axs[1, 0].legend()
+            axs[1, 0].tick_params(axis='x', rotation=45, labelsize=8)
+            
+            # Plot 4: Total Shifts per Work Area
+            total_per_area = [sum(area_data[area]) for area in areas]
+            logging.info(f"Area visualization total_per_area: {total_per_area}")
+            
+            axs[1, 1].bar(areas, total_per_area, color=colors[:len(areas)])
+            axs[1, 1].set_xlabel('Work Areas')
+            axs[1, 1].set_ylabel('Total Shifts')
+            axs[1, 1].set_title('Total Shifts per Work Area')
+            axs[1, 1].tick_params(axis='x', rotation=45)
             
             plt.tight_layout()
             
