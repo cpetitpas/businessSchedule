@@ -3,7 +3,7 @@ import logging
 from datetime import datetime, timedelta
 from collections import defaultdict
 
-def setup_problem(employees, day_offsets, shifts, areas, shift_prefs, day_prefs, work_areas, constraints, min_shifts, max_shifts, max_weekend_days, num_weeks, relax_day, relax_shift, relax_weekend, relax_max_shifts, actual_days):
+def setup_problem(employees, day_offsets, shifts, areas, shift_prefs, day_prefs, work_areas, constraints, min_shifts, max_shifts, max_weekend_days, num_weeks, relax_day, relax_shift, relax_weekend, relax_max_shifts, relax_min_shifts, actual_days):
     prob = pulp.LpProblem("Restaurant_Schedule", pulp.LpMaximize)
     
     # Decision variables
@@ -13,12 +13,24 @@ def setup_problem(employees, day_offsets, shifts, areas, shift_prefs, day_prefs,
         x[e] = {w: {k: {s: {a: pulp.LpVariable(f"assign_{e}_w{w}_{k}_{s}_{a}", cat="Binary") for a in work_areas[e]} for s in shifts} for k in day_offsets} for w in range(num_weeks)}
         y[e] = {w: {k: pulp.LpVariable(f"y_{e}_w{w}_{k}", cat="Binary") for k in day_offsets} for w in range(num_weeks)}
     
+    # Normalize Day Weights for non-weekend days (Mon-Thu)
+    non_weekend_days = ['Mon', 'Tue', 'Wed', 'Thu']
+    normalized_day_prefs = {}
+    for e in employees:
+        # Get preferences for non-weekend days based on actual_days
+        non_weekend_prefs = [day_prefs[e][actual_days[k]] for k in day_offsets if actual_days[k] in non_weekend_days]
+        non_zero_prefs = [p for p in non_weekend_prefs if p > 0]
+        avg_weight = sum(non_zero_prefs) / len(non_zero_prefs) if non_zero_prefs else 1.0
+        # Apply average weight to preferred non-weekend days, 0 elsewhere
+        normalized_day_prefs[e] = [avg_weight if (actual_days[k] in non_weekend_days and day_prefs[e][actual_days[k]] > 0) else 0 for k in day_offsets]
+        logging.info(f"Employee {e} normalized day weights: {normalized_day_prefs[e]}")
+    
     # Objective function: Maximize preference satisfaction, penalize violations if relaxed
     day_penalty = -10 if relax_day else 0
     shift_penalty = -10 if relax_shift else 0
     objective = pulp.lpSum(
         x[e][w][k][s][a] * (
-            (day_prefs[e][actual_days[k]] if day_prefs[e][actual_days[k]] > 0 else day_penalty) +
+            (normalized_day_prefs[e][k] if normalized_day_prefs[e][k] > 0 else day_penalty) +
             (shift_prefs[e][s] if shift_prefs[e][s] > 0 else shift_penalty)
         )
         for e in employees for w in range(num_weeks) for k in day_offsets for s in shifts for a in work_areas[e]
@@ -157,12 +169,14 @@ def solve_schedule(employees, days, shifts, areas, shift_prefs, day_prefs, must_
     logging.debug("Actual days for schedule: %s", actual_days)
     
     # Dynamic relaxation based on violation_order
-    rule_to_flag = {
+    possible_rules = {
         "Day Weights": 'relax_day',
-        "Shift Weights": 'relax_shift',
+        "Shift Weight": 'relax_shift',
         "Max Number of Weekend Days": 'relax_weekend',
-        "Max Shifts per Week": 'relax_max_shifts'
+        "Max Shifts per Week": 'relax_max_shifts',
+        "Min Shifts per Week": 'relax_min_shifts'
     }
+    rule_to_flag = {rule: flag for rule, flag in possible_rules.items() if rule in violation_order}
     relax_params = {
         'relax_day': False,
         'relax_shift': False,
@@ -171,23 +185,29 @@ def solve_schedule(employees, days, shifts, areas, shift_prefs, day_prefs, must_
         'relax_min_shifts': False
     }
     configs = []
-    configs.append((relax_params['relax_day'], relax_params['relax_shift'], relax_params['relax_weekend'], relax_params['relax_max_shifts']))
+    configs.append(tuple(relax_params[flag] for flag in rule_to_flag.values()))
     for rule in violation_order:
         if rule in rule_to_flag:
             relax_params[rule_to_flag[rule]] = True
-        configs.append((relax_params['relax_day'], relax_params['relax_shift'], relax_params['relax_weekend'], relax_params['relax_max_shifts']))
+        configs.append(tuple(relax_params[flag] for flag in rule_to_flag.values()))
     
-    # Remove duplicates
+    # Remove duplicates while preserving order
     configs = list(dict.fromkeys(configs))
     
     employee_summary = get_employee_summary(employees, work_areas, required, actual_days, shifts, areas)
     logging.info(employee_summary)
     
     day_offsets = range(7)
-    for i, (relax_day, relax_shift, relax_weekend, relax_max_shifts) in enumerate(configs):
-        logging.info("Attempt %d: relax_day=%s, relax_shift=%s, relax_weekend=%s, relax_max_shifts=%s", i + 1, relax_day, relax_shift, relax_weekend, relax_max_shifts)
-        prob, x, y = setup_problem(employees, day_offsets, shifts, areas, shift_prefs, day_prefs, work_areas, constraints, min_shifts, max_shifts, max_weekend_days, num_weeks, relax_day, relax_shift, relax_weekend, relax_max_shifts, actual_days)
-        add_constraints(prob, x, y, employees, day_offsets, shifts, areas, required, work_areas, constraints, must_off, min_shifts, max_shifts, max_weekend_days, start_date, num_weeks, relax_min_shifts=relax_max_shifts, relax_max_shifts=relax_max_shifts, relax_weekend=relax_weekend, actual_days=actual_days)
+    for i, config in enumerate(configs):
+        relax_flags = dict(zip(rule_to_flag.values(), config))
+        relax_day = relax_flags.get('relax_day', False)
+        relax_shift = relax_flags.get('relax_shift', False)
+        relax_weekend = relax_flags.get('relax_weekend', False)
+        relax_max_shifts = relax_flags.get('relax_max_shifts', False)
+        relax_min_shifts = relax_flags.get('relax_min_shifts', False)
+        logging.info("Attempt %d: %s", i + 1, ", ".join(f"{flag}={relax_flags[flag]}" for flag in rule_to_flag.values()))
+        prob, x, y = setup_problem(employees, day_offsets, shifts, areas, shift_prefs, day_prefs, work_areas, constraints, min_shifts, max_shifts, max_weekend_days, num_weeks, relax_day, relax_shift, relax_weekend, relax_max_shifts, relax_min_shifts, actual_days)
+        add_constraints(prob, x, y, employees, day_offsets, shifts, areas, required, work_areas, constraints, must_off, min_shifts, max_shifts, max_weekend_days, start_date, num_weeks, relax_min_shifts, relax_max_shifts, relax_weekend, actual_days)
         
         prob.solve()
         if prob.status == pulp.LpStatusOptimal:
