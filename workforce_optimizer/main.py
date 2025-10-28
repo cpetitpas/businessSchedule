@@ -21,6 +21,32 @@ root = tk.Tk()
 root.title("Workforce Optimizer")
 root.geometry(DEFAULT_GEOMETRY)
 
+# Hide the root window initially
+root.withdraw()
+
+def show_disclaimer(parent):
+    """
+    Display a standard disclaimer/security statement when the application starts.
+    """
+    disclaimer_text = (
+        "DISCLAIMER AND SECURITY STATEMENT\n\n"
+        "This Workforce Optimizer application is provided 'as is' without any warranties, express or implied, "
+        "including but not limited to warranties of merchantability, fitness for a particular purpose, or non-infringement. "
+        "The developers and contributors are not responsible for any damages, losses, or liabilities arising from the use of this software, "
+        "including but not limited to direct, indirect, incidental, or consequential damages.\n\n"
+        "This software is licensed for use by the original recipient only and is non-transferable. "
+        "All rights are reserved by the developers. Unauthorized distribution, modification, or commercial use is prohibited.\n\n"
+        "For support or inquiries, contact chris070411@gmail.com.\n\n"
+        "By using this application, you agree to these terms."
+    )
+    messagebox.showinfo("Disclaimer", disclaimer_text, parent=parent)
+
+# Show disclaimer before rendering the main window
+show_disclaimer(root)
+
+# Restore the root window after disclaimer is dismissed
+root.deiconify()
+
 # Create canvas and scrollbar
 canvas = tk.Canvas(root)
 scrollbar = ttk.Scrollbar(root, orient="vertical", command=canvas.yview)
@@ -61,7 +87,7 @@ viz_frame = None
 def setup_gui():
     global start_date_entry, bar_frame, kitchen_frame, emp_frame, req_frame, limits_frame, notebook, summary_text, viz_frame
     from tkcalendar import DateEntry
-    # Start date selection
+   # Start date selection
     tk.Label(scrollable_frame, text="Select Start Date:").pack(pady=5)
     start_date_entry = DateEntry(scrollable_frame, width=12, background='darkblue', foreground='white', borderwidth=2, year=2025, firstweekday='sunday', showweeknumbers=False)
     start_date_entry.pack(pady=5)
@@ -93,7 +119,7 @@ def setup_gui():
     tk.Button(scrollable_frame, text="View Input Data", command=lambda: display_input_data(emp_file_var.get(), req_file_var.get(), limits_file_var.get(), emp_frame, req_frame, limits_frame, root, notebook, summary_text)).pack(pady=5)
 
     # Save Input Data button
-    tk.Button(scrollable_frame, text="Save Input Data", command=lambda: save_input_data(emp_file_var.get(), req_file_var.get(), limits_file_var.get(), emp_frame, req_frame, limits_frame)).pack(pady=5)
+    tk.Button(scrollable_frame, text="Save Input Data", command=lambda: save_input_data(emp_file_var.get(), req_file_var.get(), limits_file_var.get(), emp_frame, req_frame, limits_frame, root)).pack(pady=5)
 
     # Input data tabs
     notebook = ttk.Notebook(scrollable_frame)
@@ -137,6 +163,9 @@ def setup_gui():
     summary_frame.rowconfigure(0, weight=1)
     summary_frame.columnconfigure(0, weight=1)
 
+    # Generate button
+    tk.Button(scrollable_frame, text="Generate Schedule", command=lambda: generate_schedule(emp_file_var.get(), req_file_var.get(), limits_file_var.get(), start_date_entry, num_weeks_var, bar_frame, kitchen_frame, summary_text, viz_frame, root, notebook)).pack(pady=10)
+
     # Schedule display frames
     tk.Label(scrollable_frame, text="Bar Schedule").pack(pady=5)
     bar_frame = tk.Frame(scrollable_frame)
@@ -146,16 +175,13 @@ def setup_gui():
     kitchen_frame = tk.Frame(scrollable_frame)
     kitchen_frame.pack(pady=5, fill="both", expand=True)
 
+    # Save Schedule Changes button
+    tk.Button(scrollable_frame, text="Save Schedule Changes", command=lambda: save_schedule_changes(bar_frame, kitchen_frame, start_date_entry.get_date(), root)).pack(pady=10)
+
     # Visualization frame
     tk.Label(scrollable_frame, text="Visualizations").pack(pady=5)
     viz_frame = tk.Frame(scrollable_frame)
     viz_frame.pack(pady=5, fill="both", expand=True)
-
-    # Generate button
-    tk.Button(scrollable_frame, text="Generate Schedule", command=lambda: generate_schedule(emp_file_var.get(), req_file_var.get(), limits_file_var.get(), start_date_entry, num_weeks_var, bar_frame, kitchen_frame, summary_text, viz_frame, root, notebook)).pack(pady=10)
-
-    # Save Schedule Changes button
-    tk.Button(scrollable_frame, text="Save Schedule Changes", command=lambda: save_schedule_changes(bar_frame, kitchen_frame, start_date_entry.get_date(), root)).pack(pady=10)
 
 # Main execution
 if __name__ == "__main__":

@@ -3,32 +3,47 @@ from datetime import datetime, timedelta
 import logging
 import tkinter as tk
 from tkinter import ttk
-from constants import DAYS, SHIFTS
 
-def min_employees_to_avoid_weekend_violations(required, max_weekend_days, areas, num_weeks):
+def min_employees_to_avoid_weekend_violations(max_weekend_days, areas, violations, work_areas, employees):
     """
     Calculate the minimum number of employees needed per area to avoid Max Number of Weekend Days violations,
-    assuming each employee can work up to the maximum allowed weekend days observed in the data.
+    based on actual violations from validate_weekend_constraints.
     """
-    max_possible = max(max_weekend_days.values()) if max_weekend_days else 2
-    fri_sun_windows = []
-    for w in range(num_weeks - 1):
-        fri_sun_windows.append([(w, "Fri"), (w, "Sat"), (w + 1, "Sun")])
-    if num_weeks > 0:
-        fri_sun_windows.append([(num_weeks - 1, "Fri"), (num_weeks - 1, "Sat")])
-    
-    min_per_area = {}
+    # Initialize counts
+    current_employees = {area: sum(1 for e in employees if area in work_areas[e]) for area in areas}
+    required_employees = {area: current_employees[area] for area in areas}  # Start with current count
+
+    # Parse violations to increment required employees
+    for violation in violations:
+        # Extract employee name (handle one or two parts)
+        emp_name = violation.split(" has ")[0].strip()
+        if emp_name not in employees:
+            logging.warning(f"Employee {emp_name} from violation not found in employee list")
+            continue
+        
+        # Extract assigned weekend days from violation (e.g., "has 3 weekend days")
+        try:
+            assigned_days = int(violation.split(" has ")[1].split(" weekend days")[0])
+        except (IndexError, ValueError):
+            logging.warning(f"Could not parse assigned days from violation: {violation}")
+            continue
+
+        # Get max weekend days for the employee
+        max_days = max_weekend_days.get(emp_name, 2)  # Default to 2 if not found
+        excess_days = assigned_days - max_days
+        if excess_days <= 0:
+            continue  # No excess, no additional employees needed
+
+        # Add excess days to the required employees for the employee's work area
+        emp_area = work_areas[emp_name][0]  # Assume single work area per employee
+        required_employees[emp_area] += excess_days
+
+    # Format the summary string
+    summary = "Employee Summary (Current vs Required):\n"
     for area in areas:
-        min_n = 0
-        for window in fri_sun_windows:
-            total_shifts = 0
-            for w, d in window:
-                for s in SHIFTS:
-                    total_shifts += required[d][area][s]
-            min_for_window = math.ceil(total_shifts / max_possible)
-            min_n = max(min_n, min_for_window)
-        min_per_area[area] = min_n
-    return min_per_area
+        summary += f"- {area}: {current_employees[area]} current employees, {required_employees[area]} employees required to avoid weekend violations\n"
+    
+    return required_employees, summary
 
 def adjust_column_widths(root, all_listboxes, all_input_trees, notebook, summary_text):
     """
