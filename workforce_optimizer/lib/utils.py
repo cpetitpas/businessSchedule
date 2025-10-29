@@ -14,6 +14,22 @@ def user_data_dir() -> str:
     os.makedirs(path, exist_ok=True)
     return path
 
+def user_log_dir() -> str:
+    """
+    Returns:  %LOCALAPPDATA%\Workforce Optimizer\logs
+    """
+    path = os.path.join(appdirs.user_data_dir(appname='Workforce Optimizer', appauthor=False), 'logs')
+    os.makedirs(path, exist_ok=True)
+    return path
+
+def user_output_dir() -> str:
+    """
+    Returns:  %LOCALAPPDATA%\Workforce Optimizer\output
+    """
+    path = os.path.join(appdirs.user_data_dir(appname='Workforce Optimizer', appauthor=False), 'output')
+    os.makedirs(path, exist_ok=True)
+    return path
+
 def min_employees_to_avoid_weekend_violations(max_weekend_days, areas, violations, work_areas, employees):
     """
     Calculate the minimum number of employees needed per area to avoid Max Number of Weekend Days violations,
