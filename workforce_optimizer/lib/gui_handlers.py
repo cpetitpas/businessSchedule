@@ -3,9 +3,9 @@ from tkinter import ttk, messagebox, filedialog
 import pandas as pd
 import datetime
 from tkcalendar import Calendar
-from solver import solve_schedule, validate_weekend_constraints
-from data_loader import load_csv
-from constants import AREAS
+from .solver import solve_schedule
+from .data_loader import load_csv
+from .constants import AREAS
 import pulp
 import math
 import logging
@@ -13,7 +13,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import os
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
-from utils import min_employees_to_avoid_weekend_violations, adjust_column_widths
+from .utils import min_employees_to_avoid_weekend_violations, adjust_column_widths
 
 logging.getLogger('matplotlib').setLevel(logging.WARNING)
 logging.getLogger('PIL').setLevel(logging.WARNING)

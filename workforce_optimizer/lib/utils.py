@@ -1,8 +1,18 @@
 import math
+import os
+import appdirs
 from datetime import datetime, timedelta
 import logging
 import tkinter as tk
 from tkinter import ttk
+
+def user_data_dir() -> str:
+    """
+    Returns:  %LOCALAPPDATA%\Workforce Optimizer\data
+    """
+    path = os.path.join(appdirs.user_data_dir(appname='Workforce Optimizer', appauthor=False), 'data')
+    os.makedirs(path, exist_ok=True)
+    return path
 
 def min_employees_to_avoid_weekend_violations(max_weekend_days, areas, violations, work_areas, employees):
     """
