@@ -66,14 +66,14 @@ import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 from lib.config import load_config, on_closing
 from lib.gui_handlers import generate_schedule, display_input_data, save_input_data, save_schedule_changes
-from lib.utils import adjust_column_widths, on_resize, on_mousewheel, user_data_dir
+from lib.utils import adjust_column_widths, on_resize, on_mousewheel, user_data_dir, user_log_dir, user_output_dir
 from lib.constants import DEFAULT_GEOMETRY
 import logging
 import matplotlib.pyplot as plt
 
 # Configure logging with date and time in filename
 from datetime import datetime
-log_file = f"workforce_optimizer_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.log"
+log_file = os.path.join(user_log_dir(), f"workforce_optimizer_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.log")
 logging.basicConfig(
     filename=log_file,
     level=logging.DEBUG,
