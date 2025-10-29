@@ -1,4 +1,5 @@
 import pulp
+from pulp import PULP_CBC_CMD
 import logging
 from datetime import datetime, timedelta
 from collections import defaultdict
@@ -209,7 +210,12 @@ def solve_schedule(employees, days, shifts, areas, shift_prefs, day_prefs, must_
         prob, x, y = setup_problem(employees, day_offsets, shifts, areas, shift_prefs, day_prefs, work_areas, constraints, min_shifts, max_shifts, max_weekend_days, num_weeks, relax_day, relax_shift, relax_weekend, relax_max_shifts, relax_min_shifts, actual_days)
         add_constraints(prob, x, y, employees, day_offsets, shifts, areas, required, work_areas, constraints, must_off, min_shifts, max_shifts, max_weekend_days, start_date, num_weeks, relax_min_shifts, relax_max_shifts, relax_weekend, actual_days)
         
-        prob.solve()
+        solver = PULP_CBC_CMD(msg=False, timeLimit=300)  # 5 min max
+        status = prob.solve(solver)
+
+        if status != 1:  # 1 = Optimal
+            logging.info("No solution found with current constraints")
+            continue
         if prob.status == pulp.LpStatusOptimal:
             logging.info("Solution found with objective value: %.2f", pulp.value(prob.objective))
             violations = validate_weekend_constraints(x, employees, day_offsets, shifts, work_areas, max_weekend_days, start_date, num_weeks, actual_days)
