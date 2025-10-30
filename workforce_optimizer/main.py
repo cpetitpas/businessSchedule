@@ -186,23 +186,33 @@ def setup_gui():
     num_weeks_entry = tk.Entry(scrollable_frame, textvariable=num_weeks_var, width=10)
     num_weeks_entry.pack(pady=5)
 
-    # File selection for Employee Data
-    tk.Label(scrollable_frame, text="Select Employee Data CSV:").pack(pady=5)
-    emp_entry = tk.Entry(scrollable_frame, textvariable=emp_file_var, width=50)
-    emp_entry.pack(pady=5)
-    tk.Button(scrollable_frame, text="Browse", command=lambda: emp_file_var.set(filedialog.askopenfilename(initialdir=user_data_dir(), filetypes=[("CSV files", "*.csv")]))).pack(pady=5)
-
-    # File selection for Personnel Required
-    tk.Label(scrollable_frame, text="Select Personnel Required CSV:").pack(pady=5)
-    req_entry = tk.Entry(scrollable_frame, textvariable=req_file_var, width=50)
-    req_entry.pack(pady=5)
-    tk.Button(scrollable_frame, text="Browse", command=lambda: req_file_var.set(filedialog.askopenfilename(initialdir=user_data_dir(), filetypes=[("CSV files", "*.csv")]))).pack(pady=5)
-
-    # File selection for Hard Limits
-    tk.Label(scrollable_frame, text="Select Hard Limits CSV:").pack(pady=5)
-    limits_entry = tk.Entry(scrollable_frame, textvariable=limits_file_var, width=50)
-    limits_entry.pack(pady=5)
-    tk.Button(scrollable_frame, text="Browse", command=lambda: limits_file_var.set(filedialog.askopenfilename(initialdir=user_data_dir(), filetypes=[("CSV files", "*.csv")]))).pack(pady=5)
+    # File selection section - organized in a single row
+    file_selection_frame = tk.Frame(scrollable_frame)
+    file_selection_frame.pack(pady=10, fill="x")
+    
+    # Employee Data column
+    emp_column = tk.Frame(file_selection_frame)
+    emp_column.pack(side="left", fill="x", expand=True, padx=5)
+    tk.Label(emp_column, text="Employee Data CSV:").pack()
+    emp_entry = tk.Entry(emp_column, textvariable=emp_file_var, width=25)
+    emp_entry.pack(pady=2)
+    tk.Button(emp_column, text="Browse", command=lambda: emp_file_var.set(filedialog.askopenfilename(initialdir=user_data_dir(), filetypes=[("CSV files", "*.csv")]) or emp_file_var.get())).pack(pady=2)
+    
+    # Personnel Required column
+    req_column = tk.Frame(file_selection_frame)
+    req_column.pack(side="left", fill="x", expand=True, padx=5)
+    tk.Label(req_column, text="Personnel Required CSV:").pack()
+    req_entry = tk.Entry(req_column, textvariable=req_file_var, width=25)
+    req_entry.pack(pady=2)
+    tk.Button(req_column, text="Browse", command=lambda: req_file_var.set(filedialog.askopenfilename(initialdir=user_data_dir(), filetypes=[("CSV files", "*.csv")]) or req_file_var.get())).pack(pady=2)
+    
+    # Hard Limits column
+    limits_column = tk.Frame(file_selection_frame)
+    limits_column.pack(side="left", fill="x", expand=True, padx=5)
+    tk.Label(limits_column, text="Hard Limits CSV:").pack()
+    limits_entry = tk.Entry(limits_column, textvariable=limits_file_var, width=25)
+    limits_entry.pack(pady=2)
+    tk.Button(limits_column, text="Browse", command=lambda: limits_file_var.set(filedialog.askopenfilename(initialdir=user_data_dir(), filetypes=[("CSV files", "*.csv")]) or limits_file_var.get())).pack(pady=2)
 
     # View Input Data button
     tk.Button(scrollable_frame, text="View Input Data", command=lambda: display_input_data(emp_file_var.get(), req_file_var.get(), limits_file_var.get(), emp_frame, req_frame, limits_frame, root, notebook, summary_text)).pack(pady=5)
