@@ -1,15 +1,79 @@
+import os
+import sys
+import shutil
+import glob
+
+# ---------------------------------------------------------------
+# resource_path() — MUST BE DEFINED FIRST
+# ---------------------------------------------------------------
+def resource_path(relative_path):
+    """Return absolute path to bundled file (works in dev & frozen)."""
+    if getattr(sys, 'frozen', False):
+        base = sys._MEIPASS
+    else:
+        base = os.path.abspath(os.path.dirname(__file__))
+    return os.path.join(base, relative_path)
+
+# ---------------------------------------------------------------
+# Extract bundled data (called by installer)
+# ---------------------------------------------------------------
+def extract_bundled_data(target_dir: str):
+    """Extract bundled data/*.csv → target_dir"""
+    try:
+        src = resource_path('data')
+        if not os.path.isdir(src):
+            return
+        os.makedirs(target_dir, exist_ok=True)
+        for src_file in glob.glob(os.path.join(src, '**', '*.csv'), recursive=True):
+            rel = os.path.relpath(src_file, src)
+            dst = os.path.join(target_dir, rel)
+            os.makedirs(os.path.dirname(dst), exist_ok=True)
+            shutil.copyfile(src_file, dst)
+    except Exception as e:
+        # Log to a temp file so installer doesn't crash
+        import tempfile
+        log_path = os.path.join(tempfile.gettempdir(), 'workforce_install_error.log')
+        with open(log_path, 'w') as f:
+            f.write(f"Extraction failed: {e}\n")
+        # Do NOT raise — installer must continue
+
+# ---------------------------------------------------------------
+# Handle installer extraction request
+# ---------------------------------------------------------------
+if len(sys.argv) == 3 and sys.argv[1] == '--extract-data':
+    extract_bundled_data(sys.argv[2])
+    sys.exit(0)
+
+# ---------------------------------------------------------------
+# install_sample_data() — fallback for first run
+# ---------------------------------------------------------------
+def install_sample_data():
+    from lib.utils import user_data_dir
+    target = user_data_dir()
+    src_dir = resource_path('data')
+    try:
+        if os.path.isdir(src_dir) and not os.listdir(target):
+            for src in glob.glob(os.path.join(src_dir, '**', '*.csv'), recursive=True):
+                rel = os.path.relpath(src, src_dir)
+                dst = os.path.join(target, rel)
+                os.makedirs(os.path.dirname(dst), exist_ok=True)
+                shutil.copyfile(src, dst)
+    except Exception:
+        pass  # Silent fail — user can browse manually
+
+
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
-from config import load_config, on_closing
-from gui_handlers import generate_schedule, display_input_data, save_input_data, save_schedule_changes
-from utils import adjust_column_widths, on_resize, on_mousewheel
-from constants import DEFAULT_GEOMETRY
+from lib.config import load_config, on_closing
+from lib.gui_handlers import generate_schedule, display_input_data, save_input_data, save_schedule_changes
+from lib.utils import adjust_column_widths, on_resize, on_mousewheel, user_data_dir, user_log_dir, user_output_dir
+from lib.constants import DEFAULT_GEOMETRY
 import logging
 import matplotlib.pyplot as plt
 
 # Configure logging with date and time in filename
 from datetime import datetime
-log_file = f"workforce_optimizer_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.log"
+log_file = os.path.join(user_log_dir(), f"workforce_optimizer_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.log")
 logging.basicConfig(
     filename=log_file,
     level=logging.DEBUG,
@@ -18,6 +82,10 @@ logging.basicConfig(
 
 # Tkinter GUI with scrollable canvas
 root = tk.Tk()
+try:
+    root.iconbitmap(resource_path(r'icons\teamwork.ico'))
+except Exception as e:
+    print(f"Could not load icon: {e}")
 root.title("Workforce Optimizer")
 root.geometry(DEFAULT_GEOMETRY)
 
@@ -87,7 +155,28 @@ viz_frame = None
 def setup_gui():
     global start_date_entry, bar_frame, kitchen_frame, emp_frame, req_frame, limits_frame, notebook, summary_text, viz_frame
     from tkcalendar import DateEntry
-   # Start date selection
+
+    # Company logo section
+    logo_frame = tk.Frame(scrollable_frame)
+    logo_frame.pack(pady=10)
+
+    try:
+        # Load and display company logo
+        from PIL import Image, ImageTk
+        logo_path = resource_path(os.path.join('images', 'silver-spur-logo-shadowed.png'))  # Place your logo file in the same directory
+        logo_image = Image.open(logo_path)
+        # Resize logo if needed (adjust width/height as desired)
+        logo_image = logo_image.resize((200, 100), Image.Resampling.LANCZOS)
+        logo_photo = ImageTk.PhotoImage(logo_image)
+        logo_label = tk.Label(logo_frame, image=logo_photo)
+        logo_label.image = logo_photo  # Keep a reference to prevent garbage collection
+        logo_label.pack()
+    except (FileNotFoundError, ImportError) as e:
+        # Fallback if logo file not found or PIL not available
+        tk.Label(logo_frame, text="Company Logo", font=("Arial", 12, "bold"), 
+                fg="blue", relief="ridge", padx=20, pady=10).pack()
+        
+    # Start date selection
     tk.Label(scrollable_frame, text="Select Start Date:").pack(pady=5)
     start_date_entry = DateEntry(scrollable_frame, width=12, background='darkblue', foreground='white', borderwidth=2, year=2025, firstweekday='sunday', showweeknumbers=False)
     start_date_entry.pack(pady=5)
@@ -97,23 +186,33 @@ def setup_gui():
     num_weeks_entry = tk.Entry(scrollable_frame, textvariable=num_weeks_var, width=10)
     num_weeks_entry.pack(pady=5)
 
-    # File selection for Employee Data
-    tk.Label(scrollable_frame, text="Select Employee Data CSV:").pack(pady=5)
-    emp_entry = tk.Entry(scrollable_frame, textvariable=emp_file_var, width=50)
-    emp_entry.pack(pady=5)
-    tk.Button(scrollable_frame, text="Browse", command=lambda: emp_file_var.set(filedialog.askopenfilename(filetypes=[("CSV files", "*.csv")]))).pack(pady=5)
-
-    # File selection for Personnel Required
-    tk.Label(scrollable_frame, text="Select Personnel Required CSV:").pack(pady=5)
-    req_entry = tk.Entry(scrollable_frame, textvariable=req_file_var, width=50)
-    req_entry.pack(pady=5)
-    tk.Button(scrollable_frame, text="Browse", command=lambda: req_file_var.set(filedialog.askopenfilename(filetypes=[("CSV files", "*.csv")]))).pack(pady=5)
-
-    # File selection for Hard Limits
-    tk.Label(scrollable_frame, text="Select Hard Limits CSV:").pack(pady=5)
-    limits_entry = tk.Entry(scrollable_frame, textvariable=limits_file_var, width=50)
-    limits_entry.pack(pady=5)
-    tk.Button(scrollable_frame, text="Browse", command=lambda: limits_file_var.set(filedialog.askopenfilename(filetypes=[("CSV files", "*.csv")]))).pack(pady=5)
+    # File selection section - organized in a single row
+    file_selection_frame = tk.Frame(scrollable_frame)
+    file_selection_frame.pack(pady=10, fill="x")
+    
+    # Employee Data column
+    emp_column = tk.Frame(file_selection_frame)
+    emp_column.pack(side="left", fill="x", expand=True, padx=5)
+    tk.Label(emp_column, text="Employee Data CSV:").pack()
+    emp_entry = tk.Entry(emp_column, textvariable=emp_file_var, width=25)
+    emp_entry.pack(pady=2)
+    tk.Button(emp_column, text="Browse", command=lambda: emp_file_var.set(filedialog.askopenfilename(initialdir=user_data_dir(), filetypes=[("CSV files", "*.csv")]) or emp_file_var.get())).pack(pady=2)
+    
+    # Personnel Required column
+    req_column = tk.Frame(file_selection_frame)
+    req_column.pack(side="left", fill="x", expand=True, padx=5)
+    tk.Label(req_column, text="Personnel Required CSV:").pack()
+    req_entry = tk.Entry(req_column, textvariable=req_file_var, width=25)
+    req_entry.pack(pady=2)
+    tk.Button(req_column, text="Browse", command=lambda: req_file_var.set(filedialog.askopenfilename(initialdir=user_data_dir(), filetypes=[("CSV files", "*.csv")]) or req_file_var.get())).pack(pady=2)
+    
+    # Hard Limits column
+    limits_column = tk.Frame(file_selection_frame)
+    limits_column.pack(side="left", fill="x", expand=True, padx=5)
+    tk.Label(limits_column, text="Hard Limits CSV:").pack()
+    limits_entry = tk.Entry(limits_column, textvariable=limits_file_var, width=25)
+    limits_entry.pack(pady=2)
+    tk.Button(limits_column, text="Browse", command=lambda: limits_file_var.set(filedialog.askopenfilename(initialdir=user_data_dir(), filetypes=[("CSV files", "*.csv")]) or limits_file_var.get())).pack(pady=2)
 
     # View Input Data button
     tk.Button(scrollable_frame, text="View Input Data", command=lambda: display_input_data(emp_file_var.get(), req_file_var.get(), limits_file_var.get(), emp_frame, req_frame, limits_frame, root, notebook, summary_text)).pack(pady=5)
@@ -185,6 +284,10 @@ def setup_gui():
 
 # Main execution
 if __name__ == "__main__":
+    # 1. Extract sample data on first run (fallback if installer failed)
+    install_sample_data()
+
+    # 2. Normal GUI startup
     setup_gui()
     load_config(root, emp_file_var, req_file_var, limits_file_var)
     root.bind("<Configure>", lambda event: on_resize(event, root, all_listboxes, all_input_trees, notebook, summary_text))

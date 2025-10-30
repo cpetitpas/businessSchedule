@@ -3,9 +3,9 @@ from tkinter import ttk, messagebox, filedialog
 import pandas as pd
 import datetime
 from tkcalendar import Calendar
-from solver import solve_schedule, validate_weekend_constraints
-from data_loader import load_csv
-from constants import AREAS
+from .solver import solve_schedule
+from .data_loader import load_csv
+from .constants import AREAS
 import pulp
 import math
 import logging
@@ -13,7 +13,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import os
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
-from utils import min_employees_to_avoid_weekend_violations, adjust_column_widths
+from .utils import min_employees_to_avoid_weekend_violations, adjust_column_widths, user_output_dir
 
 logging.getLogger('matplotlib').setLevel(logging.WARNING)
 logging.getLogger('PIL').setLevel(logging.WARNING)
@@ -129,14 +129,14 @@ def save_input_data(emp_path, req_path, limits_path, emp_frame, req_frame, limit
                 # Create dialog for new filename
                 dialog = tk.Toplevel(root)
                 dialog.title(f"Save {file_type} As")
-                dialog.geometry("400x150")
+                dialog.geometry("600x150")
                 
                 # Center the dialog relative to the root window
                 dialog.transient(root)
                 dialog.update_idletasks()
                 x = root.winfo_x() + (root.winfo_width() // 2) - (dialog.winfo_width() // 2)
                 y = root.winfo_y() + (root.winfo_height() // 2) - (dialog.winfo_height() // 2)
-                dialog.geometry(f"400x150+{x}+{y}")
+                dialog.geometry(f"600x150+{x}+{y}")
                 
                 tk.Label(dialog, text="Enter filename:").pack(pady=5)
                 filename_entry = tk.Entry(dialog)
@@ -394,7 +394,7 @@ def save_schedule_changes(bar_frame, kitchen_frame, start_date, root):
             messagebox.showwarning("Warning", f"No schedule data for {area} to save.")
             continue
         
-        default_filename = f"{area}_schedule_{date_str}.csv"
+        default_filename = os.path.join(user_output_dir(), f"{area}_schedule_{date_str}.csv")
         filename = default_filename
         
         # Check if file exists before prompting
@@ -403,14 +403,14 @@ def save_schedule_changes(bar_frame, kitchen_frame, start_date, root):
                 # Create dialog for new filename
                 dialog = tk.Toplevel(root)
                 dialog.title(f"Save {area} Schedule As")
-                dialog.geometry("300x150")
+                dialog.geometry("600x150")
                 
                 # Center the dialog relative to the root window
                 dialog.transient(root)
                 dialog.update_idletasks()
                 x = root.winfo_x() + (root.winfo_width() // 2) - (dialog.winfo_width() // 2)
                 y = root.winfo_y() + (root.winfo_height() // 2) - (dialog.winfo_height() // 2)
-                dialog.geometry(f"300x150+{x}+{y}")
+                dialog.geometry(f"600x150+{x}+{y}")
                 
                 tk.Label(dialog, text="Enter filename:").pack(pady=5)
                 filename_entry = tk.Entry(dialog)
@@ -426,6 +426,9 @@ def save_schedule_changes(bar_frame, kitchen_frame, start_date, root):
                         return
                     if not filename.lower().endswith(".csv"):
                         filename += ".csv"
+                    # Ensure the filename is in the user output directory
+                    if not os.path.dirname(filename):
+                        filename = os.path.join(user_output_dir(), filename)
                     save_clicked[0] = True
                     dialog.destroy()
                 
@@ -554,7 +557,7 @@ def generate_schedule(emp_path, req_path, limits_path, start_date_entry, num_wee
                 
                 tree.bind("<Double-1>", lambda e, t=tree, a=area: edit_schedule_cell(t, e, a, emp_path))
             
-            filename = f"{area}_schedule_{start_date:%Y-%m-%d}.csv"
+            filename = os.path.join(user_output_dir(), f"{area}_schedule_{start_date:%Y-%m-%d}.csv")
             try:
                 with open(filename, "w") as f:
                     for week in range(1, num_weeks + 1):
@@ -593,7 +596,7 @@ def generate_schedule(emp_path, req_path, limits_path, start_date_entry, num_wee
         
         summary_df = summary_df.sort_values("Employee")
         
-        summary_filename = f"Summary_report_{start_date:%Y-%m-%d}.csv"
+        summary_filename = os.path.join(user_output_dir(), f"Summary_report_{start_date:%Y-%m-%d}.csv")
         try:
             summary_df.to_csv(summary_filename, index=False)
             save_messages.append(f"Saved summary to {summary_filename}")
