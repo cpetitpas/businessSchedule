@@ -464,7 +464,7 @@ def generate_schedule(emp_path, req_path, limits_path, start_date_entry, num_wee
     """
     global all_listboxes, schedule_trees
     all_listboxes = []
-    schedule_trees = {}                     # Global for save_schedule_changes
+    schedule_trees = {} # Global for save_schedule_changes
     try:
         start_date = start_date_entry.get_date()
     except tk.TclError:
@@ -474,53 +474,43 @@ def generate_schedule(emp_path, req_path, limits_path, start_date_entry, num_wee
     if num_weeks < 1:
         messagebox.showerror("Error", "Number of weeks must be at least 1")
         return
-
     try:
         # === CLEAR UI ===
         for widget in schedule_container.winfo_children():
             widget.destroy()
-
         day_names = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
         start_weekday = start_date.weekday()
         actual_days = [day_names[(start_weekday + k) % 7] for k in range(7)]
-
         result = load_csv(emp_path, req_path, limits_path, start_date, num_weeks)
         if result is None:
             return
-
         employees, _, shifts, areas, shift_prefs, day_prefs, must_off, required, work_areas, constraints, min_shifts, max_shifts, max_weekend_days = result
-
         # === SOLVE ===
         prob, x, result_dict = solve_schedule(
             employees, range(7), shifts, areas, shift_prefs, day_prefs, must_off, required, work_areas, constraints,
             min_shifts, max_shifts, max_weekend_days, start_date, num_weeks=num_weeks
         )
-
         # -------------------------------------------------
         # 1. CAPACITY REPORT – ALWAYS available in result_dict
         # -------------------------------------------------
         capacity_report = result_dict.get("capacity_report", "")
-
         # === FAILURE PATH (prob is None) ===
         if prob is None:
             # Show message box (unchanged)
             error_msg = result_dict.get("error", "Unknown solver error.")
             messagebox.showerror("No Feasible Schedule", error_msg)
             logging.error(error_msg)
-
             # === BUILD FAILURE REPORT ONCE — DO NOT INCLUDE capacity_report AGAIN ===
-            min_emps, min_str = min_employees_to_avoid_weekend_violations(max_weekend_days, areas, [], work_areas, employees)
-
+            min_emps, min_str, _ = min_employees_to_avoid_weekend_violations(
+                max_weekend_days, areas, [], work_areas, employees
+            )
             # ---- UI ----
             summary_text.delete(1.0, tk.END)
-
             report_lines = []
-
             # ONLY the capacity_report (once)
             if capacity_report:
                 report_lines.append(capacity_report)
                 report_lines.append("")
-
             # Add failure banner and **do not re-add** any part of error_msg that contains the report
             report_lines.extend([
                 "SOLVER FAILED TO FIND A FEASIBLE SCHEDULE",
@@ -529,7 +519,6 @@ def generate_schedule(emp_path, req_path, limits_path, start_date_entry, num_wee
                 "",
                 "Possible fixes (from solver):",
             ])
-
             # Extract only the "Possible fixes" part from error_msg (skip the capacity report part)
             if "Possible fixes:" in error_msg:
                 fixes_part = error_msg.split("Possible fixes:", 1)[1]
@@ -537,10 +526,8 @@ def generate_schedule(emp_path, req_path, limits_path, start_date_entry, num_wee
                     line.strip() for line in fixes_part.splitlines() if line.strip()
                 )
             report_lines.extend(["", min_str.strip()])
-
             # Insert into UI
             summary_text.insert(tk.END, "\n".join(report_lines) + "\n")
-
             # ---- FILE ----
             summary_file = os.path.join(user_output_dir(), f"Summary_report_{start_date:%Y-%m-%d}.csv")
             try:
@@ -549,22 +536,18 @@ def generate_schedule(emp_path, req_path, limits_path, start_date_entry, num_wee
                 logging.info(f"Saved failure summary to {summary_file}")
             except Exception as e:
                 logging.error(f"Failed to save failure summary: {e}")
-
             adjust_column_widths(root, all_listboxes, all_input_trees, notebook, summary_text)
             return
-
         # === NON-OPTIMAL STATUS ===
         if prob.status != pulp.LpStatusOptimal:
             status_msg = pulp.LpStatus[prob.status]
             messagebox.showerror("Solver Error", f"Failed to find optimal solution: {status_msg}")
             logging.error("Solver status: %s", status_msg)
             return
-
         # === SUCCESS PATH (unchanged below) ===
         violations = result_dict.get("violations", [])
         violations_str = "Weekend constraint violations:\n" + ("\n".join(violations) if violations else "None")
         save_messages = []
-
         schedule_trees = {area: [] for area in areas}
         for area in areas:
             area_label = tk.Label(schedule_container, text=f"{area} Schedule", font=("Arial", 12, "bold"))
@@ -575,7 +558,6 @@ def generate_schedule(emp_path, req_path, limits_path, start_date_entry, num_wee
                 tree = create_schedule_treeview(area_frame, week, start_date, shifts, actual_days)
                 schedule_trees[area].append(tree)
                 all_listboxes.append(tree)
-
                 area_schedule = result_dict.get(f"{area.lower()}_schedule", [])
                 for e, date_str, day, s, a in area_schedule:
                     if a != area: continue
@@ -587,7 +569,6 @@ def generate_schedule(emp_path, req_path, limits_path, start_date_entry, num_wee
                         current = tree.set(s, actual_days[k])
                         tree.set(s, actual_days[k], f"{current}, {e}" if current else e)
                 tree.bind("<Double-1>", lambda e, t=tree, a=area, emp=emp_path: edit_schedule_cell(t, e, a, emp))
-
             # Auto-save
             filename = os.path.join(user_output_dir(), f"{area}_schedule_{start_date:%Y-%m-%d}.csv")
             try:
@@ -595,25 +576,23 @@ def generate_schedule(emp_path, req_path, limits_path, start_date_entry, num_wee
                 save_messages.append(f"Saved {area} schedule to {filename}")
             except Exception as e:
                 messagebox.showerror("Error", f"Failed to save {area} schedule: {e}")
-
         # === Summary Report (UI) ===
-        min_emps, min_str = min_employees_to_avoid_weekend_violations(max_weekend_days, areas, violations, work_areas, employees)
-
+        min_emps, min_str, violations = min_employees_to_avoid_weekend_violations(
+            max_weekend_days, areas, violations, work_areas, employees,
+            start_date=start_date, num_weeks=num_weeks, result_dict=result_dict
+        )
+        violations_str = "Weekend constraint violations:\n" + ("\n".join(violations) if violations else "None")
         summary_text.delete(1.0, tk.END)
-
         # 1. Capacity report first (only once)
         if capacity_report:
             summary_text.insert(tk.END, capacity_report + "\n\n")
-
         # 2. Weekend info
         summary_text.insert(tk.END, violations_str + "\n\n")
         summary_text.insert(tk.END, min_str + "\n\n")
-
         # 3. Employee shift summary
         summary_text.insert(tk.END, "Employee Shift Summary:\n")
         summary_text.insert(tk.END, f"{'Employee':<20} {'Total':<8} {'Weeks':<20}\n")
         summary_text.insert(tk.END, "-" * 48 + "\n")
-
         # Build employee shift counts
         summary_df = pd.DataFrame(index=employees, columns=["Employee", "Total Shifts"] + [f"Week {i+1}" for i in range(num_weeks)])
         summary_df["Employee"] = employees
@@ -635,7 +614,6 @@ def generate_schedule(emp_path, req_path, limits_path, start_date_entry, num_wee
             weeks = ", ".join(str(int(summary_df.loc[e, f"Week {i+1}"])) for i in range(num_weeks))
             summary_text.insert(tk.END, f"{e:<20} {int(total):<8} {weeks}\n")
         summary_text.insert(tk.END, f"\n{'Overall Total Shifts':<20} {total_shifts}\n")
-
         # === Save Summary Report to file ===
         summary_file = os.path.join(user_output_dir(), f"Summary_report_{start_date:%Y-%m-%d}.csv")
         try:
@@ -654,13 +632,11 @@ def generate_schedule(emp_path, req_path, limits_path, start_date_entry, num_wee
                 weeks = ", ".join(str(int(summary_df.loc[e, f"Week {i+1}"])) for i in range(num_weeks))
                 file_lines.append(f"{e:<20} {int(summary_df.loc[e, 'Total Shifts']):<8} {weeks}")
             file_lines.append(f"\n{'Overall Total Shifts':<20} {total_shifts}")
-
             with open(summary_file, "w", encoding="utf-8") as f:
                 f.write("\n".join(file_lines))
             save_messages.append(f"Saved summary to {summary_file}")
         except Exception as e:
             messagebox.showerror("Error", f"Failed to save summary: {e}")
-
         # === Visualizations ===
         try:
             for child in viz_frame.winfo_children():
@@ -704,10 +680,8 @@ def generate_schedule(emp_path, req_path, limits_path, start_date_entry, num_wee
         except Exception as e:
             messagebox.showerror("Error", f"Visualization failed: {e}")
             tk.Label(viz_frame, text="Visualization failed.").pack()
-
         adjust_column_widths(root, all_listboxes, all_input_trees, notebook, summary_text)
         messagebox.showinfo("Success", "\n".join(save_messages) + "\n\n" + violations_str + "\n\n" + min_str)
-
     except Exception as e:
         messagebox.showerror("Error", f"Unexpected error: {str(e)}")
         logging.error(f"generate_schedule error: {e}", exc_info=True)
