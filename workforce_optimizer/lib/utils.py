@@ -47,31 +47,36 @@ def min_employees_to_avoid_weekend_violations(
         start_date=None, num_weeks=None, result_dict=None):
     """
     Return:
-        required_employees (dict area → int)
+        required_employees (dict area to int)
         summary_text (str)
         violations (list of str)   # now always populated
     """
     # -------------------------------------------------
-    # 1. If we have a solved schedule → build violations from it
+    # 1. If we have a solved schedule to build violations from it
     # -------------------------------------------------
     if not violations and result_dict and start_date and num_weeks:
         end_date = start_date + timedelta(days=7 * num_weeks - 1)
-        # Build a list of all weekend triplets (Fri-Sat-Sun) that fall inside the schedule
-        weekends = []                     # each entry = [(week, day_idx), …] for Fri-Sat-Sun
-        cur = start_date - timedelta(days=6)
-        while cur <= end_date + timedelta(days=2):
-            if cur.weekday() == 4:        # Friday
+        # Build a list of **complete** Fri-Sat-Sun triplets that fall **entirely** inside the schedule
+        weekends = []  # each entry = [(week, day_idx), ...] for Fri-Sat-Sun
+        cur = start_date - timedelta(days=6)  # start far enough back to catch partial weeks
+        while cur <= end_date:
+            if cur.weekday() == 4:  # Friday
                 triplet = []
+                all_in_range = True
                 for d in range(3):
                     date = cur + timedelta(days=d)
-                    if start_date <= date <= end_date:
-                        days_since = (date - start_date).days
-                        w = days_since // 7
-                        k = days_since % 7
-                        triplet.append((w, k))
-                if triplet:
+                    if not (start_date <= date <= end_date):
+                        all_in_range = False
+                        break
+                    days_since = (date - start_date).days
+                    w = days_since // 7
+                    k = days_since % 7
+                    triplet.append((w, k))
+                # Only keep the triplet if **all three days** are in the schedule
+                if all_in_range and len(triplet) == 3:
                     weekends.append(triplet)
             cur += timedelta(days=1)
+
         # Mark every scheduled shift (any area) for each employee
         worked = {e: [[0]*7 for _ in range(num_weeks)] for e in employees}
         for area in areas:
@@ -88,6 +93,7 @@ def min_employees_to_avoid_weekend_violations(
                     w = days_since // 7
                     k = days_since % 7
                     worked[e][w][k] = 1
+
         # Detect violations
         violations = []
         for e in employees:
@@ -95,17 +101,25 @@ def min_employees_to_avoid_weekend_violations(
             for weekend in weekends:
                 count = sum(worked[e][w][k] for w, k in weekend)
                 if count > max_d:
-                    violations.append(f"{e} has {count} weekend days (max {max_d})")
+                    # Build human-readable date range for this weekend
+                    fri_date = start_date + timedelta(days=weekend[0][0]*7 + weekend[0][1])
+                    sun_date = start_date + timedelta(days=weekend[2][0]*7 + weekend[2][1])
+                    date_range = f"{fri_date:%b %d}–{sun_date:%b %d}, {fri_date.year}"
+                    violations.append(
+                        f"{e} has {count} weekend days (max {max_d}) on {date_range}"
+                    )
+
     # -------------------------------------------------
     # 2. Compute required extra staff per area
     # -------------------------------------------------
     current_employees = {area: sum(1 for e in employees if area in work_areas[e]) for area in areas}
     required_employees = {area: current_employees[area] for area in areas}
     for v in violations:
-        # v ≈ "Joe C has 3 weekend days (max 1)"
         try:
+            # "Joe C has 3 weekend days (max 1) on Nov 01–Nov 03, 2025"
             emp_name = v.split(" has ")[0]
-            count = int(v.split(" has ")[1].split(" weekend")[0])
+            count_str = v.split(" has ")[1].split(" weekend")[0]
+            count = int(count_str)
             max_d = max_weekend_days.get(emp_name, 2)
         except Exception:
             logging.warning(f"Could not parse violation string: {v}")
@@ -113,10 +127,11 @@ def min_employees_to_avoid_weekend_violations(
         excess = count - max_d
         if excess <= 0:
             continue
-        # Employee works in exactly one area (per the CSV layout)
+        # Employee works in exactly one area
         emp_area = next((a for a in work_areas[emp_name] if a in areas), None)
         if emp_area:
             required_employees[emp_area] += excess
+
     # -------------------------------------------------
     # 3. Build the human-readable summary
     # -------------------------------------------------
