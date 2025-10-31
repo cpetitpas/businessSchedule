@@ -661,7 +661,7 @@ def generate_schedule(emp_path, req_path, limits_path, start_date_entry, num_wee
         except Exception as e:
             messagebox.showerror("Error", f"Failed to save summary: {e}")
 
-        # === Visualizations (unchanged) ===
+        # === Visualizations ===
         try:
             for child in viz_frame.winfo_children():
                 child.destroy()
@@ -669,7 +669,33 @@ def generate_schedule(emp_path, req_path, limits_path, start_date_entry, num_wee
             fig, axs = plt.subplots(2, 2, figsize=(max(10, len(active)*0.5)+5, 10),
                                   gridspec_kw={'width_ratios': [3, 1], 'height_ratios': [1, 1]})
             colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728']
-            # ... (visualization code unchanged) ...
+            # Plot 1
+            week_data = {f'Week {i+1}': [int(summary_df.loc[e, f'Week {i+1}']) for e in active] for i in range(num_weeks)}
+            bottom = np.zeros(len(active))
+            for i, (week, data) in enumerate(week_data.items()):
+                axs[0,0].bar(active, data, label=week, bottom=bottom, color=colors[i % len(colors)])
+                bottom += data
+            axs[0,0].set_title('Shifts per Employee (by Week)')
+            axs[0,0].legend()
+            axs[0,0].tick_params(axis='x', rotation=45, labelsize=8)
+            # Plot 2
+            axs[0,1].bar(week_data.keys(), [sum(d) for d in week_data.values()], color=colors[:num_weeks])
+            axs[0,1].set_title('Total Shifts per Week')
+            # Plot 3
+            area_counts = {a: [0]*len(active) for a in areas}
+            for i, e in enumerate(active):
+                for area in areas:
+                    area_counts[area][i] = sum(1 for entry in result_dict.get(f"{area.lower()}_schedule", []) if entry[0] == e)
+            bottom = np.zeros(len(active))
+            for i, (area, data) in enumerate(area_counts.items()):
+                axs[1,0].bar(active, data, label=area, bottom=bottom, color=colors[i % len(colors)])
+                bottom += data
+            axs[1,0].set_title('Shifts per Employee (by Area)')
+            axs[1,0].legend()
+            axs[1,0].tick_params(axis='x', rotation=45, labelsize=8)
+            # Plot 4
+            axs[1,1].bar(areas, [sum(d) for d in area_counts.values()], color=colors[:len(areas)])
+            axs[1,1].set_title('Total Shifts per Area')
             plt.tight_layout()
             canvas = FigureCanvasTkAgg(fig, viz_frame)
             canvas.draw()
