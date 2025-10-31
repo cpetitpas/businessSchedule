@@ -30,6 +30,18 @@ def user_output_dir() -> str:
     os.makedirs(path, exist_ok=True)
     return path
 
+def find_treeviews(widget):
+    """
+    Recursively find all ttk.Treeview widgets in the widget and its descendants.
+    """
+    treeviews = []
+    for child in widget.winfo_children():
+        if isinstance(child, ttk.Treeview):
+            treeviews.append(child)
+        else:
+            treeviews.extend(find_treeviews(child))
+    return treeviews
+
 def min_employees_to_avoid_weekend_violations(max_weekend_days, areas, violations, work_areas, employees):
     """
     Calculate the minimum number of employees needed per area to avoid Max Number of Weekend Days violations,
