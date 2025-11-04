@@ -1,0 +1,8 @@
+Employee/Input,Joe A,Jane A,Joe B,Jane B,Joe C,Jane C,Joe D,Jane D,Joe E,Jane E,Joe F,Jane F,Joe G,Jane G,Joe H,Betty
+Work Area,Bar,Bar,Kitchen,Kitchen,Kitchen,Kitchen,Bar,Bar,Kitchen,Kitchen,Kitchen,Bar,Bar,Kitchen,Kitchen,Kitchen
+Shift Weight,Evening,Morning,Morning,Evening,Evening,Evening,Evening,Evening,Morning,Evening,Evening,Morning,Evening,Morning,Evening,Morning
+Day Weights,"Sat, Sun","Tue, Wed","Wed, Thu, Sat","Wed, Thu, Fri","Wed, Thu, Sat","Mon, Tue, Wed","Mon, Wed, Fri","Tue, Wed","Wed, Thu, Sat","Tue, Fri","Wed, Thu, Sat","Mon, Tue, Wed","Mon, Wed, Fri","Tue, Wed","Mon, Tue, Wed","Mon, Tue, Wed, Thu"
+Must have off,,,11/5/2025,,,,,,,,,,,,,11/4/2025
+Min Shifts per Week,1,2,2,2,2,2,2,3,2,2,2,2,2,2,2,2
+Max Shifts per Week,2,3,3,4,3,3,3,4,3,3,4,3,3,3,3,3
+Max Number of Weekend Days,1,1,1,1,1,2,1,2,1,1,1,1,1,2,1,1
