@@ -67,6 +67,7 @@ from tkinter import ttk, filedialog, messagebox
 from lib.config import load_config, on_closing
 from lib.gui_handlers import generate_schedule, display_input_data, save_input_data, save_schedule_changes
 from lib.utils import adjust_column_widths, on_resize, on_mousewheel, user_data_dir, user_log_dir, user_output_dir
+from lib.data_loader import load_csv
 from lib.constants import DEFAULT_GEOMETRY
 import logging
 import matplotlib.pyplot as plt
@@ -142,18 +143,53 @@ start_date_entry = None
 num_weeks_var = tk.IntVar(value=2)
 all_listboxes = []
 all_input_trees = []
-bar_frame = None
-kitchen_frame = None
 emp_frame = None
 req_frame = None
 limits_frame = None
 notebook = None
 summary_text = None
 viz_frame = None
+current_areas = []
 
 # GUI setup
 def setup_gui():
-    global start_date_entry, bar_frame, kitchen_frame, emp_frame, req_frame, limits_frame, notebook, summary_text, viz_frame
+    global start_date_entry, scrollable_frame, emp_frame, req_frame, limits_frame, notebook, summary_text, viz_frame
+
+    def generate_and_store_areas():
+        """Generate schedule and store areas for saving."""
+        global current_areas
+        try:
+            emp_path = emp_file_var.get()
+            req_path = req_file_var.get()
+            limits_path = limits_file_var.get()
+            start_date = start_date_entry.get_date()
+            num_weeks = num_weeks_var.get()
+
+            if not all([emp_path, req_path, limits_path]):
+                messagebox.showerror("Error", "Please select all input files.")
+                return
+
+            # === Call generate_schedule with the REAL frame ===
+            generate_schedule(
+                emp_path, req_path, limits_path,
+                start_date_entry, num_weeks_var,
+                None, None,  # bar_frame, kitchen_frame (deprecated)
+                summary_text, viz_frame, root, notebook, schedule_container  # ← Real frame
+            )
+
+            # === Re-run load_csv to get areas ===
+            result = load_csv(emp_path, req_path, limits_path, start_date, num_weeks)
+            if result is not None:
+                _, _, _, areas, _, _, _, _, _, _, _, _, _ = result
+                current_areas = areas
+                logging.info(f"Stored areas: {current_areas}")
+            else:
+                current_areas = []
+
+        except Exception as e:
+            messagebox.showerror("Error", f"Generation failed: {e}")
+            logging.error(f"generate_and_store_areas error: {e}")
+            current_areas = []
     from tkcalendar import DateEntry
 
     # Company logo section
@@ -263,22 +299,27 @@ def setup_gui():
     summary_frame.columnconfigure(0, weight=1)
 
     # Generate button
-    tk.Button(scrollable_frame, text="Generate Schedule", command=lambda: generate_schedule(emp_file_var.get(), req_file_var.get(), limits_file_var.get(), start_date_entry, num_weeks_var, bar_frame, kitchen_frame, summary_text, viz_frame, root, notebook)).pack(pady=10)
-
-    # Schedule display frames
-    tk.Label(scrollable_frame, text="Bar Schedule").pack(pady=5)
-    bar_frame = tk.Frame(scrollable_frame)
-    bar_frame.pack(pady=5, fill="both", expand=True)
-
-    tk.Label(scrollable_frame, text="Kitchen Schedule").pack(pady=5)
-    kitchen_frame = tk.Frame(scrollable_frame)
-    kitchen_frame.pack(pady=5, fill="both", expand=True)
+    tk.Button(scrollable_frame, text="Generate Schedule", 
+          command=lambda: generate_and_store_areas()).pack(pady=10)
 
     # Save Schedule Changes button
-    tk.Button(scrollable_frame, text="Save Schedule Changes", command=lambda: save_schedule_changes(bar_frame, kitchen_frame, start_date_entry.get_date(), root)).pack(pady=10)
+    tk.Button(scrollable_frame, text="Save Schedule Changes", 
+          command=lambda: save_schedule_changes(
+              start_date_entry.get_date(),
+              root,
+              schedule_container,  # ← Pass the real Frame
+              current_areas
+          )).pack(pady=10)
 
-    # Visualization frame
-    tk.Label(scrollable_frame, text="Visualizations").pack(pady=5)
+    # === SCHEDULES SECTION ===
+    tk.Label(scrollable_frame, text="Schedules", font=("Arial", 12, "bold")).pack(pady=(20, 5), anchor="center")
+
+    # ← CREATE THE ACTUAL FRAME
+    schedule_container = tk.Frame(scrollable_frame)
+    schedule_container.pack(pady=5, fill="both", expand=True)
+
+    # Visualization frame (existing)
+    tk.Label(scrollable_frame, text="Visualizations", font=("Arial", 12, "bold")).pack(pady=5)
     viz_frame = tk.Frame(scrollable_frame)
     viz_frame.pack(pady=5, fill="both", expand=True)
 

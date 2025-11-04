@@ -30,46 +30,117 @@ def user_output_dir() -> str:
     os.makedirs(path, exist_ok=True)
     return path
 
-def min_employees_to_avoid_weekend_violations(max_weekend_days, areas, violations, work_areas, employees):
+def find_treeviews(widget):
     """
-    Calculate the minimum number of employees needed per area to avoid Max Number of Weekend Days violations,
-    based on actual violations from validate_weekend_constraints.
+    Recursively find all ttk.Treeview widgets in the widget and its descendants.
     """
-    # Initialize counts
+    treeviews = []
+    for child in widget.winfo_children():
+        if isinstance(child, ttk.Treeview):
+            treeviews.append(child)
+        else:
+            treeviews.extend(find_treeviews(child))
+    return treeviews
+
+def min_employees_to_avoid_weekend_violations(
+        max_weekend_days, areas, violations, work_areas, employees,
+        start_date=None, num_weeks=None, result_dict=None):
+    """
+    Return:
+        required_employees (dict area to int)
+        summary_text (str)
+        violations (list of str)   # now always populated
+    """
+    # -------------------------------------------------
+    # 1. If we have a solved schedule to build violations from it
+    # -------------------------------------------------
+    if not violations and result_dict and start_date and num_weeks:
+        end_date = start_date + timedelta(days=7 * num_weeks - 1)
+        # Build a list of **complete** Fri-Sat-Sun triplets that fall **entirely** inside the schedule
+        weekends = []  # each entry = [(week, day_idx), ...] for Fri-Sat-Sun
+        cur = start_date - timedelta(days=6)  # start far enough back to catch partial weeks
+        while cur <= end_date:
+            if cur.weekday() == 4:  # Friday
+                triplet = []
+                all_in_range = True
+                for d in range(3):
+                    date = cur + timedelta(days=d)
+                    if not (start_date <= date <= end_date):
+                        all_in_range = False
+                        break
+                    days_since = (date - start_date).days
+                    w = days_since // 7
+                    k = days_since % 7
+                    triplet.append((w, k))
+                # Only keep the triplet if **all three days** are in the schedule
+                if all_in_range and len(triplet) == 3:
+                    weekends.append(triplet)
+            cur += timedelta(days=1)
+
+        # Mark every scheduled shift (any area) for each employee
+        worked = {e: [[0]*7 for _ in range(num_weeks)] for e in employees}
+        for area in areas:
+            sched = result_dict.get(f"{area.lower()}_schedule", [])
+            for e, date_str, _, _, a in sched:
+                if a != area or e not in employees:
+                    continue
+                try:
+                    date = datetime.strptime(date_str, "%Y-%m-%d").date()
+                except ValueError:
+                    continue
+                days_since = (date - start_date).days
+                if 0 <= days_since < 7*num_weeks:
+                    w = days_since // 7
+                    k = days_since % 7
+                    worked[e][w][k] = 1
+
+        # Detect violations
+        violations = []
+        for e in employees:
+            max_d = max_weekend_days.get(e, 2)
+            for weekend in weekends:
+                count = sum(worked[e][w][k] for w, k in weekend)
+                if count > max_d:
+                    # Build human-readable date range for this weekend
+                    fri_date = start_date + timedelta(days=weekend[0][0]*7 + weekend[0][1])
+                    sun_date = start_date + timedelta(days=weekend[2][0]*7 + weekend[2][1])
+                    date_range = f"{fri_date:%b %d}–{sun_date:%b %d}, {fri_date.year}"
+                    violations.append(
+                        f"{e} has {count} weekend days (max {max_d}) on {date_range}"
+                    )
+
+    # -------------------------------------------------
+    # 2. Compute required extra staff per area
+    # -------------------------------------------------
     current_employees = {area: sum(1 for e in employees if area in work_areas[e]) for area in areas}
-    required_employees = {area: current_employees[area] for area in areas}  # Start with current count
-
-    # Parse violations to increment required employees
-    for violation in violations:
-        # Extract employee name (handle one or two parts)
-        emp_name = violation.split(" has ")[0].strip()
-        if emp_name not in employees:
-            logging.warning(f"Employee {emp_name} from violation not found in employee list")
-            continue
-        
-        # Extract assigned weekend days from violation (e.g., "has 3 weekend days")
+    required_employees = {area: current_employees[area] for area in areas}
+    for v in violations:
         try:
-            assigned_days = int(violation.split(" has ")[1].split(" weekend days")[0])
-        except (IndexError, ValueError):
-            logging.warning(f"Could not parse assigned days from violation: {violation}")
+            # "Joe C has 3 weekend days (max 1) on Nov 01–Nov 03, 2025"
+            emp_name = v.split(" has ")[0]
+            count_str = v.split(" has ")[1].split(" weekend")[0]
+            count = int(count_str)
+            max_d = max_weekend_days.get(emp_name, 2)
+        except Exception:
+            logging.warning(f"Could not parse violation string: {v}")
             continue
+        excess = count - max_d
+        if excess <= 0:
+            continue
+        # Employee works in exactly one area
+        emp_area = next((a for a in work_areas[emp_name] if a in areas), None)
+        if emp_area:
+            required_employees[emp_area] += excess
 
-        # Get max weekend days for the employee
-        max_days = max_weekend_days.get(emp_name, 2)  # Default to 2 if not found
-        excess_days = assigned_days - max_days
-        if excess_days <= 0:
-            continue  # No excess, no additional employees needed
-
-        # Add excess days to the required employees for the employee's work area
-        emp_area = work_areas[emp_name][0]  # Assume single work area per employee
-        required_employees[emp_area] += excess_days
-
-    # Format the summary string
-    summary = "Employee Summary (Current vs Required):\n"
+    # -------------------------------------------------
+    # 3. Build the human-readable summary
+    # -------------------------------------------------
+    lines = ["Employee Summary (Current vs Required):"]
     for area in areas:
-        summary += f"- {area}: {current_employees[area]} current employees, {required_employees[area]} employees required to avoid weekend violations\n"
-    
-    return required_employees, summary
+        lines.append(f"- {area}: {current_employees[area]} current employees, "
+                     f"{required_employees[area]} employees required to avoid weekend violations")
+    summary = "\n".join(lines)
+    return required_employees, summary, violations
 
 def adjust_column_widths(root, all_listboxes, all_input_trees, notebook, summary_text):
     """
