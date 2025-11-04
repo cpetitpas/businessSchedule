@@ -91,7 +91,7 @@ root.title("Workforce Optimizer")
 root.geometry(DEFAULT_GEOMETRY)
 
 # Hide the root window initially
-root.withdraw()
+#root.withdraw()
 
 def show_disclaimer(parent):
     """
@@ -109,12 +109,78 @@ def show_disclaimer(parent):
         "By using this application, you agree to these terms."
     )
     messagebox.showinfo("Disclaimer", disclaimer_text, parent=parent)
+# ---- NEW: TRIAL DIALOG -------------------------------------------------
+from lib.trial import TrialManager
+import tkinter.messagebox as mb
+
+def show_trial_dialog(parent):
+    try:
+        tm = TrialManager()
+    except Exception as e:
+        logging.error(f"Trial init failed: {e}", exc_info=True)
+        messagebox.showerror("Trial Error", f"Cannot start trial system:\n{e}")
+        parent.quit()
+        return
+
+    days = tm.days_left()
+    dlg = tk.Toplevel(parent)
+    dlg.title("Trial Status")
+    dlg.geometry("460x280")
+    dlg.transient(parent)
+    dlg.grab_set()
+
+    # centre
+    dlg.update_idletasks()
+    x = parent.winfo_rootx() + (parent.winfo_width() // 2) - (dlg.winfo_width() // 2)
+    y = parent.winfo_rooty() + (parent.winfo_height() // 2) - (dlg.winfo_height() // 2)
+    dlg.geometry(f"+{x}+{y}")
+
+    # ------------------------------------------------------------------
+    if tm.is_registered():
+        msg = "This copy is **registered** – full version."
+        show_register = False
+        btn_text = "Continue"
+        btn_cmd = dlg.destroy
+    elif days == 0:
+        msg = ("**TRIAL EXPIRED**\n"
+               "Contact chris070411@gmail.com for a registration code.")
+        show_register = True
+        btn_text = "Exit"
+        btn_cmd = lambda: parent.quit()          # <-- HARD EXIT
+    else:
+        msg = (f"**{days} day{'s' if days != 1 else ''} left** in your 30-day trial.\n"
+               "Contact chris070411@gmail.com for a registration code.")
+        show_register = True
+        btn_text = "Continue"
+        btn_cmd = dlg.destroy
+
+    tk.Label(dlg, text=msg, justify="center", padx=20, pady=15, font=("Arial", 10)).pack()
+
+    # ------------------------------------------------------------------
+    if show_register:
+        frm = tk.Frame(dlg)
+        frm.pack(pady=8)
+        entry = tk.Entry(frm, width=30, justify="center")
+        entry.pack(side="left", padx=5)
+
+        def do_register():
+            ok, txt = tm.register(entry.get())
+            messagebox.showinfo("Registration", txt)
+            if ok:
+                dlg.destroy()
+
+        tk.Button(frm, text="Register", command=do_register).pack(side="left")
+
+    # ------------------------------------------------------------------
+    tk.Button(dlg, text=btn_text, command=btn_cmd).pack(pady=12)
+    parent.wait_window(dlg)
 
 # Show disclaimer before rendering the main window
 show_disclaimer(root)
+show_trial_dialog(root)
 
 # Restore the root window after disclaimer is dismissed
-root.deiconify()
+#root.deiconify()
 
 # Create canvas and scrollbar
 canvas = tk.Canvas(root)
