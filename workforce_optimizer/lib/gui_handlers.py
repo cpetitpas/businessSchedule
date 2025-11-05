@@ -372,8 +372,14 @@ def save_schedule_changes(start_date, root, schedule_container, areas):
         for area in areas:
             area_trees = []
             # Look for area frames in schedule_container
+            found_area_label = False
             for widget in schedule_container.winfo_children():
-                if isinstance(widget, tk.Frame):
+                # Check if this is the label for our area
+                if isinstance(widget, tk.Label) and widget.cget("text") == f"{area} Schedule":
+                    found_area_label = True
+                    continue
+                # If we found the label, the next Frame contains this area's treeviews
+                if found_area_label and isinstance(widget, tk.Frame):
                     # Find treeviews in this frame
                     for child in widget.winfo_children():
                         if isinstance(child, tk.Frame):
@@ -382,6 +388,9 @@ def save_schedule_changes(start_date, root, schedule_container, areas):
                                     for ggchild in grandchild.winfo_children():
                                         if isinstance(ggchild, ttk.Treeview):
                                             area_trees.append(ggchild)
+                    # Stop after processing this area's frame
+                    found_area_label = False
+                    break
             
             if area_trees:
                 # Determine number of weeks from number of trees
@@ -395,7 +404,22 @@ def save_schedule_changes(start_date, root, schedule_container, areas):
                 
                 if filename:
                     try:
-                        save_area_schedule(area_trees, filename, start_date, num_weeks, actual_days)
+                        # Save with header for each week
+                        with open(filename, "w") as f:
+                            for week in range(1, num_weeks + 1):
+                                tree = area_trees[week-1]
+                                week_start = start_date + datetime.timedelta(days=(week-1)*7)
+                                week_end = week_start + datetime.timedelta(days=6)
+                                # Write header with area name and date range
+                                f.write(f'"{area} Schedule ({week_start:%b %d, %Y} - {week_end:%b %d, %Y})"\n')
+                                # Write column headers
+                                f.write("Day/Shift," + ",".join(f'"{actual_days[k]}, {week_start + datetime.timedelta(days=k):%b %d, %y}"' for k in range(7)) + "\n")
+                                # Write data rows
+                                for item in tree.get_children():
+                                    values = [tree.set(item, "Day/Shift")] + [tree.set(item, actual_days[k]) for k in range(7)]
+                                    f.write(",".join(f'"{v}"' for v in values) + "\n")
+                                f.write("\n")
+                        
                         save_messages.append(f"Saved {area} schedule to {filename}")
                         logging.info(f"Saved {area} schedule to {filename}")
                     except Exception as e:
@@ -447,11 +471,14 @@ def create_schedule_treeview(parent, week, start_date, shifts, actual_days):
 
     return tree
 
-def save_area_schedule(treeviews, filename, start_date, num_weeks, actual_days):
+def save_area_schedule(treeviews, filename, start_date, num_weeks, actual_days, area):
     with open(filename, "w") as f:
         for week in range(1, num_weeks + 1):
             tree = treeviews[week-1]
-            f.write("Day/Shift," + ",".join(f'"{actual_days[k]}, {start_date + datetime.timedelta(days=(week-1)*7 + k):%b %d, %y}"' for k in range(7)) + "\n")
+            week_start = start_date + datetime.timedelta(days=(week-1)*7)
+            week_end = week_start + datetime.timedelta(days=6)
+            f.write(f'"{area} Schedule ({week_start:%b %d, %Y} - {week_end:%b %d, %Y})"\n')
+            f.write("Day/Shift," + ",".join(f'"{actual_days[k]}, {week_start + datetime.timedelta(days=k):%b %d, %y}"' for k in range(7)) + "\n")
             for item in tree.get_children():
                 values = [tree.set(item, "Day/Shift")] + [tree.set(item, actual_days[k]) for k in range(7)]
                 f.write(",".join(f'"{v}"' for v in values) + "\n")
@@ -572,7 +599,7 @@ def generate_schedule(emp_path, req_path, limits_path, start_date_entry, num_wee
             # Auto-save
             filename = os.path.join(user_output_dir(), f"{area}_schedule_{start_date:%Y-%m-%d}.csv")
             try:
-                save_area_schedule(schedule_trees[area], filename, start_date, num_weeks, actual_days)
+                save_area_schedule(schedule_trees[area], filename, start_date, num_weeks, actual_days, area)
                 save_messages.append(f"Saved {area} schedule to {filename}")
             except Exception as e:
                 messagebox.showerror("Error", f"Failed to save {area} schedule: {e}")
