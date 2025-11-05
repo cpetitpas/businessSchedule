@@ -21,17 +21,27 @@ def resource_path(relative_path):
 # ---------------------------------------------------------------
 def install_sample_data():
     from lib.utils import user_data_dir
-    target = user_data_dir()
-    src_dir = resource_path('data')
+    target_dir = user_data_dir()
+    src_dir = resource_path('data')  # Now works in onedir
+
     try:
-        if os.path.isdir(src_dir) and not os.listdir(target):
-            for src in glob.glob(os.path.join(src_dir, '**', '*.csv'), recursive=True):
-                rel = os.path.relpath(src, src_dir)
-                dst = os.path.join(target, rel)
-                os.makedirs(os.path.dirname(dst), exist_ok=True)
-                shutil.copyfile(src, dst)
-    except Exception:
-        pass
+        if not os.path.exists(target_dir):
+            os.makedirs(target_dir, exist_ok=True)
+
+        # SKIP IF ANY CSV EXISTS
+        if any(f.lower().endswith('.csv') for f in os.listdir(target_dir)):
+            logging.info("Sample data already exists — skipping copy")
+            return
+
+        logging.info("Copying sample data...")
+        for src in glob.glob(os.path.join(src_dir, '**', '*.csv'), recursive=True):
+            rel = os.path.relpath(src, src_dir)
+            dst = os.path.join(target_dir, rel)
+            os.makedirs(os.path.dirname(dst), exist_ok=True)
+            shutil.copy2(src, dst)
+        logging.info("Sample data copied successfully")
+    except Exception as e:
+        logging.error(f"Failed to copy sample data: {e}")
 
 # ---------------------------------------------------------------
 # CRITICAL: CHECK TRIAL BEFORE ANY TKINTER
@@ -58,17 +68,19 @@ def check_trial_and_exit():
             return True
         days = tm.days_left()
         if days == 0:
-            # --- PROFESSIONAL EXPIRED DIALOG ---
             root = tk.Tk()
-            root.withdraw()  # Hide main window
-            root.iconbitmap(resource_path(r'icons\teamwork.ico'))  # Optional
+            root.withdraw()
+            try:
+                root.iconbitmap(resource_path(r'icons\teamwork.ico'))
+            except:
+                pass
 
             msg = (
                 "TRIAL EXPIRED\n\n"
                 "Your 30-day trial has ended.\n"
                 "To continue using Workforce Optimizer,\n"
                 "please purchase a license.\n\n"
-                "Contact: chris070411@gmail.com\n"
+                "Contact: chris070411@gmail.com"
             )
             messagebox.showwarning("Trial Expired", msg, parent=root)
             root.destroy()
@@ -84,12 +96,14 @@ def check_trial_and_exit():
         logging.error(f"Trial init failed: {e}", exc_info=True)
         return False
 
+# === IN if __name__ == "__main__": ===
+if not check_trial_and_exit():
+    sys.exit(0)
+
 # ---------------------------------------------------------------
 # MAIN: TRIAL CHECK FIRST
 # ---------------------------------------------------------------
 if __name__ == "__main__":
-    install_sample_data()
-
     # BLOCK GUI IF TRIAL FAILS
     if not check_trial_and_exit():
         sys.exit(0)
@@ -97,8 +111,7 @@ if __name__ == "__main__":
     # ONLY NOW: START TKINTER
     import tkinter as tk
     from tkinter import ttk, filedialog, messagebox
-    # ... rest of your imports ...
-
+    
     root = tk.Tk()
     root.title("Workforce Optimizer")
     root.geometry("1200x800")
@@ -113,9 +126,13 @@ if __name__ == "__main__":
     def show_disclaimer(parent):
         text = (
             "DISCLAIMER AND SECURITY STATEMENT\n\n"
-            "This Workforce Optimizer application is provided 'as is' without any warranties.\n"
-            "Licensed for use by the original recipient only. Unauthorized distribution is prohibited.\n\n"
-            "Contact: chris070411@gmail.com\n\n"
+            "This Workforce Optimizer application is provided 'as is' without any warranties, express or implied, "
+            "including but not limited to warranties of merchantability, fitness for a particular purpose, or non-infringement. "
+            "The developers and contributors are not responsible for any damages, losses, or liabilities arising from the use of this software, "
+            "including but not limited to direct, indirect, incidental, or consequential damages.\n\n"
+            "This software is licensed for use by the original recipient only and is non-transferable. "
+            "All rights are reserved by the developers. Unauthorized distribution, modification, or commercial use is prohibited.\n\n"
+            "For support or inquiries, contact chris070411@gmail.com.\n\n"
             "By using this application, you agree to these terms."
         )
         messagebox.showinfo("Disclaimer", text, parent=parent)
@@ -199,7 +216,9 @@ if __name__ == "__main__":
     if not root.TRIAL_PASSED:
         logging.info("Trial expired or not passed — exiting")
         root.quit()
-        sys.exit(0)      
+        sys.exit(0)
+
+    install_sample_data()
 
     # ------------------------------------------------------------------
     # GUI BUILD (only if we get here)

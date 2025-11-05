@@ -2,7 +2,7 @@
 dist/*
 build/*
 workforce_optimizer/*.log
-*.csv
+./*.csv
 workforce_optimizer/*.csv
 workforce_optimizer/__pycache__/
 workforce_optimizer/lib/__pycache__/
