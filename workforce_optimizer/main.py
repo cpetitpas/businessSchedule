@@ -261,7 +261,7 @@ if __name__ == "__main__":
 
         from tkcalendar import DateEntry
 
-        # Logo
+        # === LOGO ===
         logo_frame = tk.Frame(scrollable_frame)
         logo_frame.pack(pady=10)
         try:
@@ -270,19 +270,19 @@ if __name__ == "__main__":
             img = Image.open(logo_path).resize((200, 100), Image.Resampling.LANCZOS)
             photo = ImageTk.PhotoImage(img)
             lbl = tk.Label(logo_frame, image=photo)
-            lbl.image = photo
+            lbl.image = photo  # Keep reference
             lbl.pack()
         except Exception:
             tk.Label(logo_frame, text="Company Logo", font=("Arial", 12, "bold"), fg="blue", relief="ridge", padx=20, pady=10).pack()
 
-        # Date & weeks
+        # === DATE & WEEKS ===
         tk.Label(scrollable_frame, text="Select Start Date:").pack(pady=5)
         start_date_entry = DateEntry(scrollable_frame, width=12, background='darkblue', foreground='white', borderwidth=2, year=2025, firstweekday='sunday')
         start_date_entry.pack(pady=5)
         tk.Label(scrollable_frame, text="Number of Weeks (1 or more):").pack(pady=5)
         tk.Entry(scrollable_frame, textvariable=num_weeks_var, width=10).pack(pady=5)
 
-        # File selection
+        # === FILE SELECTION ===
         file_frame = tk.Frame(scrollable_frame)
         file_frame.pack(pady=10, fill="x")
         for label, var in [("Employee Data CSV:", emp_file_var), ("Personnel Required CSV:", req_file_var), ("Hard Limits CSV:", limits_file_var)]:
@@ -294,27 +294,35 @@ if __name__ == "__main__":
                 filedialog.askopenfilename(initialdir=user_data_dir(), filetypes=[("CSV files", "*.csv")]) or v.get()
             )).pack(pady=2)
 
-        # Buttons
-        tk.Button(scrollable_frame, text="View Input Data", command=lambda: display_input_data(
-            emp_file_var.get(), req_file_var.get(), limits_file_var.get(),
-            emp_frame, req_frame, limits_frame, root, notebook, summary_text
-        )).pack(pady=5)
-        tk.Button(scrollable_frame, text="Save Input Data", command=lambda: save_input_data(
-            emp_file_var.get(), req_file_var.get(), limits_file_var.get(),
-            emp_frame, req_frame, limits_frame, root
-        )).pack(pady=5)
-
-        # Notebook
+        # === NOTEBOOK + FRAMES (CRITICAL: BEFORE BUTTONS) ===
         notebook = ttk.Notebook(scrollable_frame)
         notebook.pack(pady=10, fill="both", expand=True)
-        for name in ["Employee Data", "Personnel Required", "Hard Limits"]:
-            f = tk.Frame(notebook)
-            f.grid_rowconfigure(0, weight=1)
-            f.grid_columnconfigure(0, weight=1)
-            notebook.add(f, text=name)
-            globals()[f"{name.lower().replace(' ', '_')}_frame"] = f
 
-        # Summary
+        # Employee Data
+        emp_frame = tk.Frame(notebook)
+        emp_frame.grid(row=0, column=0, sticky="nsew")
+        emp_frame.grid_rowconfigure(0, weight=1)
+        emp_frame.grid_columnconfigure(0, weight=1)
+        notebook.add(emp_frame, text="Employee Data")
+        globals()['emp_frame'] = emp_frame  # ← CRITICAL
+
+        # Personnel Required
+        req_frame = tk.Frame(notebook)
+        req_frame.grid(row=0, column=0, sticky="nsew")
+        req_frame.grid_rowconfigure(0, weight=1)
+        req_frame.grid_columnconfigure(0, weight=1)
+        notebook.add(req_frame, text="Personnel Required")
+        globals()['req_frame'] = req_frame  # ← CRITICAL
+
+        # Hard Limits
+        limits_frame = tk.Frame(notebook)
+        limits_frame.grid(row=0, column=0, sticky="nsew")
+        limits_frame.grid_rowconfigure(0, weight=1)
+        limits_frame.grid_columnconfigure(0, weight=1)
+        notebook.add(limits_frame, text="Hard Limits")
+        globals()['limits_frame'] = limits_frame  # ← CRITICAL
+
+        # === SUMMARY TAB ===
         summary_tab = tk.Frame(notebook)
         summary_tab.grid_rowconfigure(0, weight=1)
         summary_tab.grid_columnconfigure(0, weight=1)
@@ -333,18 +341,29 @@ if __name__ == "__main__":
         sframe.rowconfigure(0, weight=1)
         sframe.columnconfigure(0, weight=1)
 
-        # Generate / Save
+        # === BUTTONS (NOW SAFE) ===
+        tk.Button(scrollable_frame, text="View Input Data", command=lambda: display_input_data(
+            emp_file_var.get(), req_file_var.get(), limits_file_var.get(),
+            emp_frame, req_frame, limits_frame, root, notebook, summary_text
+        )).pack(pady=5)
+
+        tk.Button(scrollable_frame, text="Save Input Data", command=lambda: save_input_data(
+            emp_file_var.get(), req_file_var.get(), limits_file_var.get(),
+            emp_frame, req_frame, limits_frame, root
+        )).pack(pady=5)
+
+        # === GENERATE & SAVE ===
         tk.Button(scrollable_frame, text="Generate Schedule", command=generate_and_store_areas).pack(pady=10)
         tk.Button(scrollable_frame, text="Save Schedule Changes", command=lambda: save_schedule_changes(
             start_date_entry.get_date(), root, schedule_container, current_areas
         )).pack(pady=10)
 
-        # Schedules
+        # === SCHEDULES ===
         tk.Label(scrollable_frame, text="Schedules", font=("Arial", 12, "bold")).pack(pady=(20, 5), anchor="center")
         schedule_container = tk.Frame(scrollable_frame)
         schedule_container.pack(pady=5, fill="both", expand=True)
 
-        # Viz
+        # === VISUALIZATIONS ===
         tk.Label(scrollable_frame, text="Visualizations", font=("Arial", 12, "bold")).pack(pady=5)
         viz_frame = tk.Frame(scrollable_frame)
         viz_frame.pack(pady=5, fill="both", expand=True)
