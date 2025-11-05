@@ -55,25 +55,33 @@ def check_trial_and_exit():
     try:
         tm = TrialManager()
         if tm.is_registered():
-            logging.info("Registered copy")
             return True
         days = tm.days_left()
         if days == 0:
-            print("\n" + "="*50)
-            print("     TRIAL EXPIRED")
-            print("     Contact chris070411@gmail.com")
-            print("     for a registration code.")
-            print("="*50 + "\n")
+            # --- PROFESSIONAL EXPIRED DIALOG ---
+            root = tk.Tk()
+            root.withdraw()  # Hide main window
+            root.iconbitmap(resource_path(r'icons\teamwork.ico'))  # Optional
+
+            msg = (
+                "TRIAL EXPIRED\n\n"
+                "Your 30-day trial has ended.\n"
+                "To continue using Workforce Optimizer,\n"
+                "please purchase a license.\n\n"
+                "Contact: chris070411@gmail.com\n"
+            )
+            messagebox.showwarning("Trial Expired", msg, parent=root)
+            root.destroy()
             logging.warning("Trial expired – user blocked")
-            input("Press Enter to exit...")
             return False
         else:
-            print(f"\nTrial: {days} day{'s' if days != 1 else ''} left\n")
             return True
     except Exception as e:
-        print(f"Trial system error: {e}")
+        root = tk.Tk()
+        root.withdraw()
+        messagebox.showerror("Error", f"Trial system error:\n{e}")
+        root.destroy()
         logging.error(f"Trial init failed: {e}", exc_info=True)
-        input("Press Enter to exit...")
         return False
 
 # ---------------------------------------------------------------
