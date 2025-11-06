@@ -1,6 +1,6 @@
 {
-    "emp_file": "C:/Users/chris/AppData/Local/Workforce Optimizer/data/Employee_Data.csv",
+    "emp_file": "C:/Users/chris/AppData/Local/Workforce Optimizer/data/Employee_DataTest.csv",
     "req_file": "C:/Users/chris/AppData/Local/Workforce Optimizer/data/Personnel_Required.csv",
     "limits_file": "C:/Users/chris/AppData/Local/Workforce Optimizer/data/Hard_Limits.csv",
-    "window_geometry": "2039x972+294+148"
+    "window_geometry": "2039x972+336+215"
 }
