@@ -189,6 +189,12 @@ if __name__ == "__main__":
         dlg.transient(parent)
         dlg.grab_set()
 
+        # Set icon
+        try:
+            dlg.iconbitmap(resource_path(r'icons\teamwork.ico'))
+        except Exception:
+            pass
+
         # Center
         dlg.update_idletasks()
         x = parent.winfo_x() + (parent.winfo_width() // 2) - (dlg.winfo_width() // 2)
