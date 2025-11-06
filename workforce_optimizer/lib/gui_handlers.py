@@ -6,7 +6,7 @@ import datetime
 from tkcalendar import Calendar
 from .solver import solve_schedule
 from .data_loader import load_csv
-from .utils import user_output_dir
+from .utils import user_output_dir, user_data_dir
 import pulp
 import math
 import logging
@@ -98,78 +98,94 @@ def save_input_data(emp_path, req_path, limits_path, emp_frame, req_frame, limit
         if has_index:
             return pd.DataFrame(data, index=index, columns=columns[1:])
         return pd.DataFrame(data, columns=columns)
+    
     def get_save_filename(default_path, file_type):
-        """Get filename with overwrite check and new filename option."""
+        """Get filename with overwrite/skip/save-as options."""
         if os.path.exists(default_path):
-            if not messagebox.askyesno("Overwrite?", f"File {default_path} already exists. Overwrite?"):
-                # Create dialog for new filename
-                dialog = tk.Toplevel(root)
-                dialog.title(f"Save {file_type} As")
-                dialog.geometry("600x150")
-                # Center the dialog relative to the root window
-                dialog.transient(root)
-                dialog.update_idletasks()
-                x = root.winfo_x() + (root.winfo_width() // 2) - (dialog.winfo_width() // 2)
-                y = root.winfo_y() + (root.winfo_height() // 2) - (dialog.winfo_height() // 2)
-                dialog.geometry(f"600x150+{x}+{y}")
-                tk.Label(dialog, text="Enter filename:").pack(pady=5)
-                filename_entry = tk.Entry(dialog)
-                filename_entry.insert(0, default_path)
-                filename_entry.pack(pady=5, fill="x", padx=10)
-                save_clicked = [False] # Use list to modify in nested function
-                def save_new_filename():
-                    nonlocal default_path
+            response = messagebox.askyesnocancel(
+                f"File Exists: {file_type}",
+                f"File already exists:\n{os.path.basename(default_path)}\n\n"
+                f"Yes: Overwrite\n"
+                f"No: Save As\n"
+                f"Cancel: Skip this file"
+            )
+            
+            if response is None:  # Cancel
+                return False
+            elif response:  # Yes - overwrite
+                return default_path
+            else:  # No - save as
+                new_filename = filedialog.asksaveasfilename(
+                    parent=root,
+                    title=f"Save {file_type} As",
+                    initialdir=user_data_dir(),
+                    initialfile=os.path.basename(default_path),
+                    defaultextension=".csv",
+                    filetypes=[("CSV files", "*.csv"), ("All files", "*.*")]
+                )
+                return new_filename if new_filename else False
+                
+                def confirm_save_as():
                     filename = filename_entry.get().strip()
                     if not filename:
                         messagebox.showerror("Error", "Filename cannot be empty.")
                         return
                     if not filename.lower().endswith(".csv"):
                         filename += ".csv"
-                    default_path = filename
-                    save_clicked[0] = True
-                    dialog.destroy()
-                def cancel_save():
-                    save_clicked[0] = None # Indicate cancellation
-                    dialog.destroy()
-                tk.Button(dialog, text="Save", command=save_new_filename).pack(pady=5)
-                tk.Button(dialog, text="Cancel", command=cancel_save).pack(pady=5)
-                dialog.transient(root)
-                dialog.grab_set()
-                root.wait_window(dialog)
-                if save_clicked[0] is None:
-                    return None # User canceled
+                    # If no directory specified, use user_output_dir
+                    if not os.path.dirname(filename):
+                        filename = os.path.join(user_output_dir(), filename)
+                    choice[0] = filename
+                    save_dialog.destroy()
+                
+                def cancel_save_as():
+                    choice[0] = False
+                    save_dialog.destroy()
+                
+                button_frame = tk.Frame(save_dialog)
+                button_frame.pack(pady=10)
+                tk.Button(button_frame, text="Save", command=confirm_save_as).pack(side=tk.LEFT, padx=5)
+                tk.Button(button_frame, text="Cancel", command=cancel_save_as).pack(side=tk.LEFT, padx=5)
+                
+                save_dialog.grab_set()
+                root.wait_window(save_dialog)
+                return choice[0]
         return default_path
+    
     save_messages = []
     try:
         # Employee Data
         emp_tree = next((w for w in emp_frame.winfo_children()[0].winfo_children() if isinstance(w, ttk.Treeview)), None)
         if emp_tree:
             filename = get_save_filename(emp_path, "Employee Data")
-            if filename:
+            if filename and filename is not False:  # filename is False when skipped
                 emp_df = tree_to_df(emp_tree, has_index=True)
                 emp_df.index.name = "Employee/Input"
                 emp_df.to_csv(filename)
                 save_messages.append(f"Saved Employee Data to {filename}")
                 logging.info(f"Saved Employee Data to {filename}")
+        
         # Personnel Required
         req_tree = next((w for w in req_frame.winfo_children()[0].winfo_children() if isinstance(w, ttk.Treeview)), None)
         if req_tree:
             filename = get_save_filename(req_path, "Personnel Required")
-            if filename:
+            if filename and filename is not False:
                 req_df = tree_to_df(req_tree, has_index=True)
                 req_df.index.name = "Day/Required"
                 req_df.to_csv(filename)
                 save_messages.append(f"Saved Personnel Required to {filename}")
                 logging.info(f"Saved Personnel Required to {filename}")
+        
         # Hard Limits
         limits_tree = next((w for w in limits_frame.winfo_children()[0].winfo_children() if isinstance(w, ttk.Treeview)), None)
         if limits_tree:
             filename = get_save_filename(limits_path, "Hard Limits")
-            if filename:
+            if filename and filename is not False:
                 limits_df = tree_to_df(limits_tree, has_index=False)
                 limits_df.to_csv(filename, index=False)
                 save_messages.append(f"Saved Hard Limits to {filename}")
                 logging.info(f"Saved Hard Limits to {filename}")
+        
         if save_messages:
             messagebox.showinfo("Success", "\n".join(save_messages))
         else:
@@ -317,48 +333,56 @@ def save_schedule_changes(start_date, root, schedule_container, areas):
     Save schedule changes to CSV files with overwrite prompt and option to save as a different filename.
     """
     def get_save_filename(default_path, file_type):
-        """Get filename with overwrite check and new filename option."""
+        """Get filename with overwrite/skip/save-as options."""
         if os.path.exists(default_path):
-            if not messagebox.askyesno("Overwrite?", f"File {default_path} already exists. Overwrite?"):
-                # Create dialog for new filename
-                dialog = tk.Toplevel(root)
-                dialog.title(f"Save {file_type} As")
-                dialog.geometry("600x150")
-                # Center the dialog relative to the root window
-                dialog.transient(root)
-                dialog.update_idletasks()
-                x = root.winfo_x() + (root.winfo_width() // 2) - (dialog.winfo_width() // 2)
-                y = root.winfo_y() + (root.winfo_height() // 2) - (dialog.winfo_height() // 2)
-                dialog.geometry(f"600x150+{x}+{y}")
-                tk.Label(dialog, text="Enter filename:").pack(pady=5)
-                filename_entry = tk.Entry(dialog)
-                filename_entry.insert(0, default_path)  # Show entire path instead of just basename
-                filename_entry.pack(pady=5, fill="x", padx=10)
-                save_clicked = [False] # Use list to modify in nested function
-                def save_new_filename():
-                    nonlocal default_path
+            response = messagebox.askyesnocancel(
+                f"File Exists: {file_type}",
+                f"File already exists:\n{os.path.basename(default_path)}\n\n"
+                f"Yes: Overwrite\n"
+                f"No: Save As\n"
+                f"Cancel: Skip this file"
+            )
+            
+            if response is None:  # Cancel
+                return False
+            elif response:  # Yes - overwrite
+                return default_path
+            else:  # No - save as
+                new_filename = filedialog.asksaveasfilename(
+                    parent=root,
+                    title=f"Save {file_type} As",
+                    initialdir=user_output_dir(),
+                    initialfile=os.path.basename(default_path),
+                    defaultextension=".csv",
+                    filetypes=[("CSV files", "*.csv"), ("All files", "*.*")]
+                )
+                return new_filename if new_filename else False
+                
+                def confirm_save_as():
                     filename = filename_entry.get().strip()
                     if not filename:
                         messagebox.showerror("Error", "Filename cannot be empty.")
                         return
                     if not filename.lower().endswith(".csv"):
                         filename += ".csv"
-                    # If filename doesn't include path, ensure it's in user_output_dir
+                    # If no directory specified, use user_output_dir
                     if not os.path.dirname(filename):
                         filename = os.path.join(user_output_dir(), filename)
-                    default_path = filename
-                    save_clicked[0] = True
-                    dialog.destroy()
-                def cancel_save():
-                    save_clicked[0] = None # Indicate cancellation
-                    dialog.destroy()
-                tk.Button(dialog, text="Save", command=save_new_filename).pack(pady=5)
-                tk.Button(dialog, text="Cancel", command=cancel_save).pack(pady=5)
-                dialog.transient(root)
-                dialog.grab_set()
-                root.wait_window(dialog)
-                if save_clicked[0] is None:
-                    return None # User canceled
+                    choice[0] = filename
+                    save_dialog.destroy()
+                
+                def cancel_save_as():
+                    choice[0] = False
+                    save_dialog.destroy()
+                
+                button_frame = tk.Frame(save_dialog)
+                button_frame.pack(pady=10)
+                tk.Button(button_frame, text="Save", command=confirm_save_as).pack(side=tk.LEFT, padx=5)
+                tk.Button(button_frame, text="Cancel", command=cancel_save_as).pack(side=tk.LEFT, padx=5)
+                
+                save_dialog.grab_set()
+                root.wait_window(save_dialog)
+                return choice[0]
         return default_path
 
     save_messages = []
@@ -402,7 +426,7 @@ def save_schedule_changes(start_date, root, schedule_container, areas):
                 # Get filename with overwrite check
                 filename = get_save_filename(default_filename, f"{area} Schedule")
                 
-                if filename:
+                if filename and filename is not False:  # filename is False when skipped
                     try:
                         # Save with header for each week
                         with open(filename, "w") as f:
@@ -490,6 +514,42 @@ def generate_schedule(emp_path, req_path, limits_path, start_date_entry, num_wee
     Generate and display schedules for dynamic work areas, with visualizations.
     """
     global all_listboxes, schedule_trees
+    
+    # Prompt user to save input data before generating schedule
+    response = messagebox.askyesnocancel(
+        "Save Input Data",
+        "Would you like to save your input data before generating the schedule?\n\n"
+        "Yes: Save input data and proceed\n"
+        "No: Proceed without saving\n"
+        "Cancel: Cancel schedule generation"
+    )
+    
+    if response is None:  # Cancel
+        return
+    elif response:  # Yes - save input data
+        try:
+            # Get the input frames from the notebook
+            emp_frame = None
+            req_frame = None
+            limits_frame = None
+            for i in range(notebook.index("end")):
+                tab_name = notebook.tab(i, "text")
+                if tab_name == "Employee Data":
+                    emp_frame = notebook.nametowidget(notebook.tabs()[i])
+                elif tab_name == "Personnel Required":
+                    req_frame = notebook.nametowidget(notebook.tabs()[i])
+                elif tab_name == "Hard Limits":
+                    limits_frame = notebook.nametowidget(notebook.tabs()[i])
+            
+            if emp_frame and req_frame and limits_frame:
+                save_input_data(emp_path, req_path, limits_path, emp_frame, req_frame, limits_frame, root)
+            else:
+                messagebox.showwarning("Warning", "Could not access input data frames. Proceeding without saving.")
+        except Exception as e:
+            messagebox.showwarning("Warning", f"Failed to save input data: {e}\n\nProceeding with schedule generation.")
+            logging.error(f"Failed to save input data before schedule generation: {e}")
+    
+    # Continue with schedule generation
     all_listboxes = []
     schedule_trees = {} # Global for save_schedule_changes
     try:
