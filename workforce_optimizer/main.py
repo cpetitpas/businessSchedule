@@ -3,6 +3,8 @@ import os
 import sys
 import shutil
 import glob
+import tkinter as tk
+from tkinter import ttk, messagebox, filedialog
 
 TRIAL_PASSED = False
 
@@ -17,52 +19,36 @@ def resource_path(relative_path):
     return os.path.join(base, relative_path)
 
 # ---------------------------------------------------------------
-# install_sample_data()
+# install_sample_data() – lazy copy, only if missing
 # ---------------------------------------------------------------
 def install_sample_data():
-    from lib.utils import user_data_dir
-    target_dir = user_data_dir()
-    src_dir = resource_path('data')  # Now works in onedir
-
     try:
+        from lib.utils import user_data_dir
+        target_dir = user_data_dir()
+        src_dir = resource_path('data')
+
         if not os.path.exists(target_dir):
             os.makedirs(target_dir, exist_ok=True)
 
-        # SKIP IF ANY CSV EXISTS
+        # Fast skip if any CSV exists
         if any(f.lower().endswith('.csv') for f in os.listdir(target_dir)):
-            logging.info("Sample data already exists — skipping copy")
             return
 
-        logging.info("Copying sample data...")
+        # Copy only what's missing
         for src in glob.glob(os.path.join(src_dir, '**', '*.csv'), recursive=True):
             rel = os.path.relpath(src, src_dir)
             dst = os.path.join(target_dir, rel)
             os.makedirs(os.path.dirname(dst), exist_ok=True)
             shutil.copy2(src, dst)
-        logging.info("Sample data copied successfully")
-    except Exception as e:
-        logging.error(f"Failed to copy sample data: {e}")
+    except Exception:
+        pass  # Silent fail – user sees missing data later
 
 # ---------------------------------------------------------------
-# CRITICAL: CHECK TRIAL BEFORE ANY TKINTER
+# check_trial_and_exit() – fast, minimal UI
 # ---------------------------------------------------------------
-import tkinter as tk
-from tkinter import ttk, filedialog, messagebox
-from lib.config import load_config, on_closing
-from lib.gui_handlers import generate_schedule, display_input_data, save_input_data, save_schedule_changes
-from lib.utils import adjust_column_widths, on_resize, on_mousewheel, user_data_dir, user_log_dir, user_output_dir
-from lib.data_loader import load_csv
-from lib.constants import DEFAULT_GEOMETRY
-import logging
-from datetime import datetime
-from lib.trial import TrialManager
-
-# Setup logging FIRST
-log_file = os.path.join(user_log_dir(), f"workforce_optimizer_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.log")
-logging.basicConfig(filename=log_file, level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
-
 def check_trial_and_exit():
     try:
+        from lib.trial import TrialManager
         tm = TrialManager()
         if tm.is_registered():
             return True
@@ -74,7 +60,6 @@ def check_trial_and_exit():
                 root.iconbitmap(resource_path(r'icons\teamwork.ico'))
             except:
                 pass
-
             msg = (
                 "TRIAL EXPIRED\n\n"
                 "Your 30-day trial has ended.\n"
@@ -84,41 +69,74 @@ def check_trial_and_exit():
             )
             messagebox.showwarning("Trial Expired", msg, parent=root)
             root.destroy()
-            logging.warning("Trial expired – user blocked")
             return False
-        else:
-            return True
-    except Exception as e:
-        root = tk.Tk()
-        root.withdraw()
-        messagebox.showerror("Error", f"Trial system error:\n{e}")
-        root.destroy()
-        logging.error(f"Trial init failed: {e}", exc_info=True)
-        return False
-
-# === IN if __name__ == "__main__": ===
-if not check_trial_and_exit():
-    sys.exit(0)
+        return True
+    except Exception:
+        return True  # Never block startup
 
 # ---------------------------------------------------------------
-# MAIN: TRIAL CHECK FIRST
+# MAIN: Fast splash + deferred heavy work
 # ---------------------------------------------------------------
 if __name__ == "__main__":
-    # BLOCK GUI IF TRIAL FAILS
     if not check_trial_and_exit():
         sys.exit(0)
 
-    # ONLY NOW: START TKINTER
-    import tkinter as tk
-    from tkinter import ttk, filedialog, messagebox
-    
+    # === ULTRA-FAST SPLASH (< 0.5s) ===
     root = tk.Tk()
+    root.withdraw()
     root.title("Workforce Optimizer")
-    root.geometry("1200x800")
+    root.geometry("400x200")
     try:
         root.iconbitmap(resource_path(r'icons\teamwork.ico'))
-    except Exception as e:
-        print(f"Icon error: {e}")
+    except:
+        pass
+
+    splash = tk.Toplevel(root)
+    splash.title("Loading...")
+    splash.geometry("400x200")
+    splash.resizable(False, False)
+    splash.overrideredirect(True)
+    splash.configure(bg="#f8f9fa")
+
+    # Center splash
+    splash.update_idletasks()
+    x = (splash.winfo_screenwidth() // 2) - (splash.winfo_width() // 2)
+    y = (splash.winfo_screenheight() // 2) - (splash.winfo_height() // 2)
+    splash.geometry(f"+{x}+{y}")
+
+    tk.Label(splash, text="Workforce Optimizer", font=("Arial", 16, "bold"), bg="#f8f9fa", fg="#212529").pack(pady=25)
+    tk.Label(splash, text="Initializing application...", font=("Arial", 10), bg="#f8f9fa", fg="#495057").pack(pady=5)
+    progress = ttk.Progressbar(splash, mode='indeterminate', length=300)
+    progress.pack(pady=20, padx=40)
+    progress.start()
+
+    root.update()
+
+    # === DEFERRED: Setup logging ===
+    from lib.utils import user_log_dir
+    from datetime import datetime
+    import logging
+
+    log_dir = user_log_dir()
+    os.makedirs(log_dir, exist_ok=True)
+    log_file = os.path.join(log_dir, f"workforce_optimizer_{datetime.now():%Y-%m-%d_%H-%M-%S}.log")
+    logging.basicConfig(
+        level=logging.DEBUG,
+        format='%(asctime)s - %(levelname)s - %(message)s',
+        handlers=[logging.FileHandler(log_file, encoding='utf-8')]
+    )
+    logging.info("Application startup")
+
+    # === DEFERRED: Copy sample data ===
+    install_sample_data()
+
+    # === CLOSE SPLASH ===
+    splash.destroy()
+
+    # === NOW BUILD GUI ===
+    root.deiconify()
+    root.geometry("1200x800")
+    root.minsize(1000, 600)
 
     # ------------------------------------------------------------------
     # MODAL DIALOGS (run BEFORE any GUI widgets)
@@ -138,17 +156,14 @@ if __name__ == "__main__":
         messagebox.showinfo("Disclaimer", text, parent=parent)
 
     # ---- TRIAL DIALOG -------------------------------------------------
-    from lib.trial import TrialManager
-    import tkinter.messagebox as mb
-
     def show_trial_dialog(parent):
-        global TRIAL_PASSED  # ← CRITICAL
-
+        global TRIAL_PASSED
         try:
+            from lib.trial import TrialManager
             tm = TrialManager()
         except Exception as e:
             logging.error(f"Trial init failed: {e}", exc_info=True)
-            mb.showerror("Trial Error", f"Cannot start trial system:\n{e}")
+            messagebox.showerror("Trial Error", f"Cannot start trial system:\n{e}")
             sys.exit(1)
 
         days = tm.days_left()
@@ -189,36 +204,29 @@ if __name__ == "__main__":
             btn_cmd = lambda: [setattr(parent, 'TRIAL_PASSED', True), dlg.destroy()]
 
         tk.Label(dlg, text=msg, justify="center", padx=20, pady=15, font=("Arial", 10)).pack()
-
         if show_register:
             frm = tk.Frame(dlg)
             frm.pack(pady=8)
             entry = tk.Entry(frm, width=30, justify="center")
             entry.pack(side="left", padx=5)
-
             def do_register():
                 ok, txt = tm.register(entry.get())
-                mb.showinfo("Registration", txt)
+                messagebox.showinfo("Registration", txt)
                 if ok:
                     parent.TRIAL_PASSED = True
                     dlg.destroy()
-
             tk.Button(frm, text="Register", command=do_register).pack(side="left")
-
         tk.Button(dlg, text=btn_text, command=btn_cmd).pack(pady=12)
         parent.wait_window(dlg)
 
     # === SHOW DIALOGS ===
     show_disclaimer(root)
-    root.TRIAL_PASSED = False  # ← Attach to root
+    root.TRIAL_PASSED = False
     show_trial_dialog(root)
-
     if not root.TRIAL_PASSED:
         logging.info("Trial expired or not passed — exiting")
         root.quit()
         sys.exit(0)
-
-    install_sample_data()
 
     # ------------------------------------------------------------------
     # GUI BUILD (only if we get here)
@@ -234,7 +242,6 @@ if __name__ == "__main__":
     def on_frame_configure(event):
         canvas.configure(scrollregion=canvas.bbox("all"))
         canvas.itemconfig(canvas_frame, width=event.width)
-
     scrollable_frame.bind("<Configure>", on_frame_configure)
     canvas.bind("<Configure>", on_frame_configure)
 
@@ -264,12 +271,14 @@ if __name__ == "__main__":
                 if not all([emp_path, req_path, limits_path]):
                     messagebox.showerror("Error", "Please select all input files.")
                     return
+                from lib.gui_handlers import generate_schedule
                 generate_schedule(
                     emp_path, req_path, limits_path,
                     start_date_entry, num_weeks_var,
                     None, None,
                     summary_text, viz_frame, root, notebook, schedule_container
                 )
+                from lib.data_loader import load_csv
                 result = load_csv(emp_path, req_path, limits_path, start_date, num_weeks)
                 if result:
                     _, _, _, areas, *_ = result
@@ -278,21 +287,20 @@ if __name__ == "__main__":
                 messagebox.showerror("Error", f"Generation failed: {e}")
                 logging.error(f"generate_and_store_areas error: {e}")
 
+        # === LAZY IMPORTS ===
         from tkcalendar import DateEntry
-
-        # === LOGO ===
-        logo_frame = tk.Frame(scrollable_frame)
-        logo_frame.pack(pady=10)
         try:
             from PIL import Image, ImageTk
             logo_path = resource_path(os.path.join('images', 'silver-spur-logo-shadowed.png'))
             img = Image.open(logo_path).resize((200, 100), Image.Resampling.LANCZOS)
             photo = ImageTk.PhotoImage(img)
+            logo_frame = tk.Frame(scrollable_frame)
+            logo_frame.pack(pady=10)
             lbl = tk.Label(logo_frame, image=photo)
-            lbl.image = photo  # Keep reference
+            lbl.image = photo
             lbl.pack()
         except Exception:
-            tk.Label(logo_frame, text="Company Logo", font=("Arial", 12, "bold"), fg="blue", relief="ridge", padx=20, pady=10).pack()
+            tk.Label(scrollable_frame, text="Company Logo", font=("Arial", 12, "bold"), fg="blue", relief="ridge", padx=20, pady=10).pack()
 
         # === DATE & WEEKS ===
         tk.Label(scrollable_frame, text="Select Start Date:").pack(pady=5)
@@ -313,33 +321,30 @@ if __name__ == "__main__":
                 filedialog.askopenfilename(initialdir=user_data_dir(), filetypes=[("CSV files", "*.csv")]) or v.get()
             )).pack(pady=2)
 
-        # === NOTEBOOK + FRAMES (CRITICAL: BEFORE BUTTONS) ===
+        # === NOTEBOOK + FRAMES ===
         notebook = ttk.Notebook(scrollable_frame)
         notebook.pack(pady=10, fill="both", expand=True)
 
-        # Employee Data
         emp_frame = tk.Frame(notebook)
         emp_frame.grid(row=0, column=0, sticky="nsew")
         emp_frame.grid_rowconfigure(0, weight=1)
         emp_frame.grid_columnconfigure(0, weight=1)
         notebook.add(emp_frame, text="Employee Data")
-        globals()['emp_frame'] = emp_frame  # ← CRITICAL
+        globals()['emp_frame'] = emp_frame
 
-        # Personnel Required
         req_frame = tk.Frame(notebook)
         req_frame.grid(row=0, column=0, sticky="nsew")
         req_frame.grid_rowconfigure(0, weight=1)
         req_frame.grid_columnconfigure(0, weight=1)
         notebook.add(req_frame, text="Personnel Required")
-        globals()['req_frame'] = req_frame  # ← CRITICAL
+        globals()['req_frame'] = req_frame
 
-        # Hard Limits
         limits_frame = tk.Frame(notebook)
         limits_frame.grid(row=0, column=0, sticky="nsew")
         limits_frame.grid_rowconfigure(0, weight=1)
         limits_frame.grid_columnconfigure(0, weight=1)
         notebook.add(limits_frame, text="Hard Limits")
-        globals()['limits_frame'] = limits_frame  # ← CRITICAL
+        globals()['limits_frame'] = limits_frame
 
         # === SUMMARY TAB ===
         summary_tab = tk.Frame(notebook)
@@ -360,18 +365,16 @@ if __name__ == "__main__":
         sframe.rowconfigure(0, weight=1)
         sframe.columnconfigure(0, weight=1)
 
-        # === BUTTONS (NOW SAFE) ===
+        # === BUTTONS ===
+        from lib.gui_handlers import display_input_data, save_input_data, save_schedule_changes
         tk.Button(scrollable_frame, text="View Input Data", command=lambda: display_input_data(
             emp_file_var.get(), req_file_var.get(), limits_file_var.get(),
             emp_frame, req_frame, limits_frame, root, notebook, summary_text
         )).pack(pady=5)
-
         tk.Button(scrollable_frame, text="Save Input Data", command=lambda: save_input_data(
             emp_file_var.get(), req_file_var.get(), limits_file_var.get(),
             emp_frame, req_frame, limits_frame, root
         )).pack(pady=5)
-
-        # === GENERATE & SAVE ===
         tk.Button(scrollable_frame, text="Generate Schedule", command=generate_and_store_areas).pack(pady=10)
         tk.Button(scrollable_frame, text="Save Schedule Changes", command=lambda: save_schedule_changes(
             start_date_entry.get_date(), root, schedule_container, current_areas
@@ -391,6 +394,9 @@ if __name__ == "__main__":
     # FINAL SETUP
     # ------------------------------------------------------------------
     setup_gui()
+    from lib.config import load_config, on_closing
+    from lib.utils import adjust_column_widths, on_resize, on_mousewheel, user_data_dir
+
     load_config(root, emp_file_var, req_file_var, limits_file_var)
     root.bind("<Configure>", lambda e: on_resize(e, root, all_listboxes, all_input_trees, notebook, summary_text))
     root.bind("<MouseWheel>", lambda e: on_mousewheel(e, canvas))
