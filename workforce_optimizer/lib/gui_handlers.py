@@ -251,24 +251,39 @@ def edit_schedule_cell(tree, event, area, emp_file_path):
     except Exception as e:
         messagebox.showerror("Error", f"Failed to load employee data from {emp_file_path}: {e}")
         return
+    # Create dialog with standard look
+    dialog = tk.Toplevel()
+    dialog.title(f"Edit Employees - {area}")
+    dialog.geometry("350x450")
+
     # Position dialog near cursor
     root_window = tree.winfo_toplevel()
     cursor_x = root_window.winfo_pointerx()
     cursor_y = root_window.winfo_pointery()
-    dialog = tk.Toplevel()
-    dialog.title(f"Edit Employees - {area}")
-    dialog.geometry("350x450")
-    # Position near cursor, but ensure it stays on screen
+    
+    # Adjust position to keep dialog on screen
     screen_width = dialog.winfo_screenwidth()
     screen_height = dialog.winfo_screenheight()
     dialog_width = 350
     dialog_height = 450
-    # Adjust position to keep dialog on screen
     x = min(cursor_x + 10, screen_width - dialog_width)
     y = min(cursor_y + 10, screen_height - dialog_height)
     x = max(0, x)
     y = max(0, y)
     dialog.geometry(f"{dialog_width}x{dialog_height}+{x}+{y}")
+    
+    # Set icon to match standard dialogs
+    try:
+        from main import resource_path  # Import from main.py
+        dialog.iconbitmap(resource_path(r'icons\teamwork.ico'))
+    except Exception as e:
+        # Fallback: use default
+        pass
+    
+    # Make dialog transient and modal
+    dialog.transient(root_window)
+    dialog.grab_set()
+    
     # Add date and shift information
     info_frame = tk.Frame(dialog)
     info_frame.pack(pady=5)
@@ -287,6 +302,19 @@ def edit_schedule_cell(tree, event, area, emp_file_path):
         dialog_x = dialog.winfo_x()
         dialog_y = dialog.winfo_y()
         add_win.geometry(f"250x200+{dialog_x + 50}+{dialog_y + 50}")
+        
+        # Set icon to match standard dialogs
+        try:
+            from main import resource_path  # Import from main.py
+            add_win.iconbitmap(resource_path(r'icons\teamwork.ico'))
+        except Exception as e:
+            # Fallback: use default
+            pass
+        
+        # Make dialog transient and modal
+        add_win.transient(dialog)
+        add_win.grab_set()
+        
         info_frame = tk.Frame(add_win)
         info_frame.pack(pady=5)
         tk.Label(info_frame, text=f"Shift: {shift_name}", font=("Arial", 10, "bold")).pack()
