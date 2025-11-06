@@ -116,15 +116,31 @@ if __name__ == "__main__":
     from lib.utils import user_log_dir
     from datetime import datetime
     import logging
+    from logging.handlers import RotatingFileHandler
+    import sys
 
     log_dir = user_log_dir()
     os.makedirs(log_dir, exist_ok=True)
     log_file = os.path.join(log_dir, f"workforce_optimizer_{datetime.now():%Y-%m-%d_%H-%M-%S}.log")
-    logging.basicConfig(
-        level=logging.DEBUG,
-        format='%(asctime)s - %(levelname)s - %(message)s',
-        handlers=[logging.FileHandler(log_file, encoding='utf-8')]
-    )
+
+    # Configure root logger
+    logger = logging.getLogger()
+    logger.setLevel(logging.DEBUG)
+    for h in logger.handlers[:]:
+        logger.removeHandler(h)
+
+    # File handler
+    file_handler = RotatingFileHandler(log_file, maxBytes=1_000_000, backupCount=5, encoding='utf-8')
+    file_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
+    logger.addHandler(file_handler)
+
+    # Console (dev only)
+    # console_handler = logging.StreamHandler(sys.stdout)
+    # console_handler.setLevel(logging.DEBUG if not getattr(sys, 'frozen', False) else logging.INFO)
+    # console_handler.setFormatter(logging.Formatter('%(levelname)s: %(message)s'))
+    # logger.addHandler(console_handler)
+
+    logging.debug("Logging system initialized")
     logging.info("Application startup")
 
     # === DEFERRED: Copy sample data ===
