@@ -5,6 +5,7 @@ import shutil
 import glob
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
+from lib.utils import show_settings_dialog
 
 TRIAL_PASSED = False
 
@@ -90,6 +91,25 @@ if __name__ == "__main__":
         root.iconbitmap(resource_path(r'icons\teamwork.ico'))
     except:
         pass
+
+    # --------------------------------------------------------------
+    #  main.py  – add Settings menu (place after you create the root)
+    # --------------------------------------------------------------
+    menubar = tk.Menu(root)
+    root.config(menu=menubar)
+
+    # ---- File menu (if you already have one, keep it) ----
+    file_menu = tk.Menu(menubar, tearoff=0)
+    menubar.add_cascade(label="File", menu=file_menu)
+    file_menu.add_command(label="Exit", command=lambda: on_closing(emp_file_var, req_file_var, limits_file_var, root))
+
+    # ---- Settings menu ------------------------------------------------
+    settings_menu = tk.Menu(menubar, tearoff=0)
+    menubar.add_cascade(label="Settings", menu=settings_menu)
+    settings_menu.add_command(
+        label="Folder Locations…",
+        command=lambda: show_settings_dialog(root)   # <-- the function from utils.py
+    )
 
     splash = tk.Toplevel(root)
     splash.title("Loading...")

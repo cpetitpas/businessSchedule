@@ -1,18 +1,184 @@
 import math
 import os
+import json
 import appdirs
+from pathlib import Path
 from datetime import datetime, timedelta
 import logging
 import tkinter as tk
 from tkinter import ttk
+from tkinter import filedialog, messagebox
 
+# ------------------------------------------------------------------
+# Helper – where the JSON file lives
+# ------------------------------------------------------------------
+def _settings_path() -> Path:
+    cfg_dir = Path(appdirs.user_config_dir(appname="Workforce Optimizer", appauthor=False))
+    cfg_dir.mkdir(parents=True, exist_ok=True)
+    return cfg_dir / "settings.json"
+
+# ------------------------------------------------------------------
+# Load (or create) the JSON dict
+# ------------------------------------------------------------------
+def _load_settings() -> dict:
+    p = _settings_path()
+    if p.is_file():
+        try:
+            return json.loads(p.read_text(encoding="utf-8"))
+        except Exception as e:
+            logging.warning(f"Failed to read settings file: {e}")
+    # default values
+    return {}
+
+# ------------------------------------------------------------------
+# Save the JSON dict
+# ------------------------------------------------------------------
+def _save_settings(data: dict):
+    p = _settings_path()
+    try:
+        p.write_text(json.dumps(data, indent=2), encoding="utf-8")
+    except Exception as e:
+        logging.error(f"Could not write settings file: {e}")
+
+# ------------------------------------------------------------------
+# Public API – data directory
+# ------------------------------------------------------------------
 def user_data_dir() -> str:
     """
-    Returns:  %LOCALAPPDATA%\Workforce Optimizer\data
+    Returns the folder that holds CSVs (default: %LOCALAPPDATA%\\Workforce Optimizer\\data)
+    The user can override it in Settings → Data folder.
     """
-    path = os.path.join(appdirs.user_data_dir(appname='Workforce Optimizer', appauthor=False), 'data')
-    os.makedirs(path, exist_ok=True)
-    return path
+    settings = _load_settings()
+    custom = settings.get("data_dir")
+    if custom and Path(custom).is_dir():
+        return str(Path(custom) / "data")
+    # fallback
+    path = Path(appdirs.user_data_dir(appname='Workforce Optimizer', appauthor=False)) / "data"
+    path.mkdir(parents=True, exist_ok=True)
+    return str(path)
+
+# ------------------------------------------------------------------
+# Public API – output directory
+# ------------------------------------------------------------------
+def user_output_dir() -> str:
+    """
+    Returns the folder for generated schedules / reports
+    (default: %LOCALAPPDATA%\\Workforce Optimizer\\output)
+    """
+    settings = _load_settings()
+    custom = settings.get("output_dir")
+    if custom and Path(custom).is_dir():
+        return str(Path(custom) / "output")
+    path = Path(appdirs.user_data_dir(appname='Workforce Optimizer', appauthor=False)) / "output"
+    path.mkdir(parents=True, exist_ok=True)
+    return str(path)
+
+# ------------------------------------------------------------------
+# UI – Settings dialog (called from main.py)
+# ------------------------------------------------------------------
+def show_settings_dialog(parent: tk.Tk):
+    """
+    Modal dialog that lets the user pick a new data / output root folder.
+    The selected folder will contain the sub-folders ``data`` and ``output``.
+    """
+    dlg = tk.Toplevel(parent)
+    dlg.title("Settings – Folder Locations")
+    dlg.geometry("680x180")
+    dlg.transient(parent)
+    dlg.grab_set()
+    dlg.resizable(False, False)
+
+    # Set icon to match standard dialogs
+    try:
+        from main import resource_path  # Import from main.py
+        dlg.iconbitmap(resource_path(r'icons\teamwork.ico'))
+    except Exception as e:
+        # Fallback: use default
+        pass
+
+    # current values
+    cur_data_root   = Path(user_data_dir()).parent
+    cur_output_root = Path(user_output_dir()).parent
+
+    # ------------------------------------------------------------------
+    # Layout
+    # ------------------------------------------------------------------
+    pad = dict(padx=10, pady=5)
+
+    frm = ttk.Frame(dlg, padding=10)
+    frm.pack(fill="both", expand=True)
+
+    # Data folder
+    ttk.Label(frm, text="Data folder (contains *.csv files):").grid(row=0, column=0, sticky="w", **pad)
+    data_var = tk.StringVar(value=str(cur_data_root))
+    ttk.Entry(frm, textvariable=data_var, width=50).grid(row=0, column=1, **pad)
+    
+    def browse_data_folder():
+        folder = filedialog.askdirectory(
+            initialdir=data_var.get(),
+            title="Select folder that will hold the 'data' sub-folder",
+            parent=dlg
+        )
+        if folder:
+            data_var.set(folder)
+    
+    ttk.Button(frm, text="Browse…", command=browse_data_folder).grid(row=0, column=2, **pad)
+
+    # Output folder
+    ttk.Label(frm, text="Output folder (schedules, reports):").grid(row=1, column=0, sticky="w", **pad)
+    out_var = tk.StringVar(value=str(cur_output_root))
+    ttk.Entry(frm, textvariable=out_var, width=50).grid(row=1, column=1, **pad)
+    
+    def browse_output_folder():
+        folder = filedialog.askdirectory(
+            initialdir=out_var.get(),
+            title="Select folder that will hold the 'output' sub-folder",
+            parent=dlg
+        )
+        if folder:
+            out_var.set(folder)
+    
+    ttk.Button(frm, text="Browse…", command=browse_output_folder).grid(row=1, column=2, **pad)
+
+    # Buttons
+    btn_frm = ttk.Frame(frm)
+    btn_frm.grid(row=2, column=0, columnspan=3, pady=15)
+
+    def apply():
+        new_data   = Path(data_var.get().strip())
+        new_output = Path(out_var.get().strip())
+
+        # sanity checks
+        if not new_data.is_dir():
+            messagebox.showerror("Invalid folder", "Data folder does not exist.", parent=dlg)
+            return
+        if not new_output.is_dir():
+            messagebox.showerror("Invalid folder", "Output folder does not exist.", parent=dlg)
+            return
+
+        # write JSON
+        _save_settings({"data_dir": str(new_data), "output_dir": str(new_output)})
+
+        # recreate sub-folders if they vanished
+        (new_data / "data").mkdir(parents=True, exist_ok=True)
+        (new_output / "output").mkdir(parents=True, exist_ok=True)
+
+        messagebox.showinfo("Settings saved",
+                            "Folder locations updated.\n"
+                            "The application will use the new paths from now on.",
+                            parent=dlg)
+        dlg.destroy()
+
+    ttk.Button(btn_frm, text="Apply", command=apply).pack(side="left", padx=5)
+    ttk.Button(btn_frm, text="Cancel", command=dlg.destroy).pack(side="left", padx=5)
+
+    # centre on parent
+    dlg.update_idletasks()
+    x = parent.winfo_x() + (parent.winfo_width() // 2) - (dlg.winfo_width() // 2)
+    y = parent.winfo_y() + (parent.winfo_height() // 2) - (dlg.winfo_height() // 2)
+    dlg.geometry(f"+{x}+{y}")
+
+    parent.wait_window(dlg)
 
 def user_log_dir() -> str:
     """
@@ -22,13 +188,6 @@ def user_log_dir() -> str:
     os.makedirs(path, exist_ok=True)
     return path
 
-def user_output_dir() -> str:
-    """
-    Returns:  %LOCALAPPDATA%\Workforce Optimizer\output
-    """
-    path = os.path.join(appdirs.user_data_dir(appname='Workforce Optimizer', appauthor=False), 'output')
-    os.makedirs(path, exist_ok=True)
-    return path
 
 def find_treeviews(widget):
     """
