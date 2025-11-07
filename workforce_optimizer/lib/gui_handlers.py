@@ -80,10 +80,8 @@ def display_input_data(emp_path, req_path, limits_path, emp_frame, req_frame, li
     create_treeview(limits_frame, limits_path, has_index=True)
     adjust_column_widths(root, all_listboxes, all_input_trees, notebook, summary_text)
 
-def save_input_data(emp_path, req_path, limits_path, emp_frame, req_frame, limits_frame, root):
-    """
-    Save the edited data from Treeview widgets back to their respective CSV files with overwrite prompt and option to save as a different filename.
-    """
+def save_input_data(emp_path, req_path, limits_path, emp_frame, req_frame, limits_frame, root,
+                    emp_file_var, req_file_var, limits_file_var):
     def tree_to_df(tree, has_index=True):
         columns = tree["columns"]
         data = []
@@ -91,16 +89,24 @@ def save_input_data(emp_path, req_path, limits_path, emp_frame, req_frame, limit
         for item in tree.get_children():
             values = [tree.set(item, col) for col in columns]
             if has_index:
+                if not values:
+                    continue
                 index.append(values[0])
-                data.append(values[1:])
+                data.append(values[1:] or [""] * (len(columns) - 1))
             else:
-                data.append(values)
+                data.append(values or [""] * len(columns))
         if has_index:
-            return pd.DataFrame(data, index=index, columns=columns[1:])
-        return pd.DataFrame(data, columns=columns)
-    
+            if not index:
+                return pd.DataFrame(data, columns=columns[1:], index=pd.RangeIndex(len(data)))
+            df = pd.DataFrame(data, index=index, columns=columns[1:])
+            df.index.name = None
+            return df
+        else:
+            return pd.DataFrame(data, columns=columns)
+
     def get_save_filename(default_path, file_type):
-        """Get filename with overwrite/skip/save-as options."""
+        from .utils import user_data_dir
+        from pathlib import Path
         if os.path.exists(default_path):
             response = messagebox.askyesnocancel(
                 f"File Exists: {file_type}",
@@ -109,73 +115,51 @@ def save_input_data(emp_path, req_path, limits_path, emp_frame, req_frame, limit
                 f"No: Save As\n"
                 f"Cancel: Skip this file"
             )
-            
-            if response is None:  # Cancel
+            if response is None:
                 return False
-            elif response:  # Yes - overwrite
+            elif response:
                 return default_path
-            else:  # No - save as
+            else:
+                actual_data_dir = user_data_dir()
+                initial_dir = str(Path(actual_data_dir).parent)
                 new_filename = filedialog.asksaveasfilename(
                     parent=root,
                     title=f"Save {file_type} As",
-                    initialdir=user_data_dir(),
+                    initialdir=initial_dir,
                     initialfile=os.path.basename(default_path),
                     defaultextension=".csv",
                     filetypes=[("CSV files", "*.csv"), ("All files", "*.*")]
                 )
                 return new_filename if new_filename else False
-                
-                def confirm_save_as():
-                    filename = filename_entry.get().strip()
-                    if not filename:
-                        messagebox.showerror("Error", "Filename cannot be empty.")
-                        return
-                    if not filename.lower().endswith(".csv"):
-                        filename += ".csv"
-                    # If no directory specified, use user_output_dir
-                    if not os.path.dirname(filename):
-                        filename = os.path.join(user_output_dir(), filename)
-                    choice[0] = filename
-                    save_dialog.destroy()
-                
-                def cancel_save_as():
-                    choice[0] = False
-                    save_dialog.destroy()
-                
-                button_frame = tk.Frame(save_dialog)
-                button_frame.pack(pady=10)
-                tk.Button(button_frame, text="Save", command=confirm_save_as).pack(side=tk.LEFT, padx=5)
-                tk.Button(button_frame, text="Cancel", command=cancel_save_as).pack(side=tk.LEFT, padx=5)
-                
-                save_dialog.grab_set()
-                root.wait_window(save_dialog)
-                return choice[0]
         return default_path
-    
+
     save_messages = []
     try:
         # Employee Data
         emp_tree = next((w for w in emp_frame.winfo_children()[0].winfo_children() if isinstance(w, ttk.Treeview)), None)
         if emp_tree:
             filename = get_save_filename(emp_path, "Employee Data")
-            if filename and filename is not False:  # filename is False when skipped
+            if filename and filename is not False:
                 emp_df = tree_to_df(emp_tree, has_index=True)
                 emp_df.index.name = "Employee/Input"
                 emp_df.to_csv(filename)
                 save_messages.append(f"Saved Employee Data to {filename}")
                 logging.info(f"Saved Employee Data to {filename}")
-        
+                emp_path = filename
+                emp_file_var.set(filename)
+
         # Personnel Required
         req_tree = next((w for w in req_frame.winfo_children()[0].winfo_children() if isinstance(w, ttk.Treeview)), None)
         if req_tree:
             filename = get_save_filename(req_path, "Personnel Required")
             if filename and filename is not False:
-                req_df = tree_to_df(req_tree, has_index=True)
-                req_df.index.name = "Day/Required"
-                req_df.to_csv(filename)
+                req_df = tree_to_df(req_tree, has_index=False)
+                req_df.to_csv(filename)  # No index name, no index=False needed unless you want no row numbers
                 save_messages.append(f"Saved Personnel Required to {filename}")
                 logging.info(f"Saved Personnel Required to {filename}")
-        
+                req_path = filename
+                req_file_var.set(filename)
+
         # Hard Limits
         limits_tree = next((w for w in limits_frame.winfo_children()[0].winfo_children() if isinstance(w, ttk.Treeview)), None)
         if limits_tree:
@@ -185,7 +169,9 @@ def save_input_data(emp_path, req_path, limits_path, emp_frame, req_frame, limit
                 limits_df.to_csv(filename, index=False)
                 save_messages.append(f"Saved Hard Limits to {filename}")
                 logging.info(f"Saved Hard Limits to {filename}")
-        
+                limits_path = filename
+                limits_file_var.set(filename)
+
         if save_messages:
             messagebox.showinfo("Success", "\n".join(save_messages))
         else:
@@ -537,7 +523,8 @@ def save_area_schedule(treeviews, filename, start_date, num_weeks, actual_days, 
             f.write("\n")
 
 def generate_schedule(emp_path, req_path, limits_path, start_date_entry, num_weeks_var, bar_frame, kitchen_frame,
-                      summary_text, viz_frame, root, notebook, schedule_container):
+                      summary_text, viz_frame, root, notebook, schedule_container,
+                      emp_file_var=None, req_file_var=None, limits_file_var=None):
     """
     Generate and display schedules for dynamic work areas, with visualizations.
     """
@@ -551,10 +538,10 @@ def generate_schedule(emp_path, req_path, limits_path, start_date_entry, num_wee
         "No: Proceed without saving\n"
         "Cancel: Cancel schedule generation"
     )
-    
-    if response is None:  # Cancel
+   
+    if response is None: # Cancel
         return
-    elif response:  # Yes - save input data
+    elif response: # Yes - save input data
         try:
             # Get the input frames from the notebook
             emp_frame = None
@@ -568,11 +555,15 @@ def generate_schedule(emp_path, req_path, limits_path, start_date_entry, num_wee
                     req_frame = notebook.nametowidget(notebook.tabs()[i])
                 elif tab_name == "Hard Limits":
                     limits_frame = notebook.nametowidget(notebook.tabs()[i])
-            
-            if emp_frame and req_frame and limits_frame:
-                save_input_data(emp_path, req_path, limits_path, emp_frame, req_frame, limits_frame, root)
+           
+            if emp_frame and req_frame and limits_frame and emp_file_var and req_file_var and limits_file_var:
+                save_input_data(
+                    emp_file_var.get(), req_file_var.get(), limits_file_var.get(),
+                    emp_frame, req_frame, limits_frame, root,
+                    emp_file_var, req_file_var, limits_file_var
+                )
             else:
-                messagebox.showwarning("Warning", "Could not access input data frames. Proceeding without saving.")
+                messagebox.showwarning("Warning", "Could not access input data frames or variables. Proceeding without saving.")
         except Exception as e:
             messagebox.showwarning("Warning", f"Failed to save input data: {e}\n\nProceeding with schedule generation.")
             logging.error(f"Failed to save input data before schedule generation: {e}")
