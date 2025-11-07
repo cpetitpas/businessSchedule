@@ -83,10 +83,18 @@ def show_settings_dialog(parent: tk.Tk):
     """
     dlg = tk.Toplevel(parent)
     dlg.title("Settings – Folder Locations")
-    dlg.geometry("560x180")
+    dlg.geometry("680x180")
     dlg.transient(parent)
     dlg.grab_set()
     dlg.resizable(False, False)
+
+    # Set icon to match standard dialogs
+    try:
+        from main import resource_path  # Import from main.py
+        dlg.iconbitmap(resource_path(r'icons\teamwork.ico'))
+    except Exception as e:
+        # Fallback: use default
+        pass
 
     # current values
     cur_data_root   = Path(user_data_dir()).parent
@@ -104,21 +112,33 @@ def show_settings_dialog(parent: tk.Tk):
     ttk.Label(frm, text="Data folder (contains *.csv files):").grid(row=0, column=0, sticky="w", **pad)
     data_var = tk.StringVar(value=str(cur_data_root))
     ttk.Entry(frm, textvariable=data_var, width=50).grid(row=0, column=1, **pad)
-    ttk.Button(frm, text="Browse…",
-               command=lambda: data_var.set(filedialog.askdirectory(
-                   initialdir=data_var.get(),
-                   title="Select folder that will hold the 'data' sub-folder")
-               )).grid(row=0, column=2, **pad)
+    
+    def browse_data_folder():
+        folder = filedialog.askdirectory(
+            initialdir=data_var.get(),
+            title="Select folder that will hold the 'data' sub-folder",
+            parent=dlg
+        )
+        if folder:
+            data_var.set(folder)
+    
+    ttk.Button(frm, text="Browse…", command=browse_data_folder).grid(row=0, column=2, **pad)
 
     # Output folder
     ttk.Label(frm, text="Output folder (schedules, reports):").grid(row=1, column=0, sticky="w", **pad)
     out_var = tk.StringVar(value=str(cur_output_root))
     ttk.Entry(frm, textvariable=out_var, width=50).grid(row=1, column=1, **pad)
-    ttk.Button(frm, text="Browse…",
-               command=lambda: out_var.set(filedialog.askdirectory(
-                   initialdir=out_var.get(),
-                   title="Select folder that will hold the 'output' sub-folder")
-               )).grid(row=1, column=2, **pad)
+    
+    def browse_output_folder():
+        folder = filedialog.askdirectory(
+            initialdir=out_var.get(),
+            title="Select folder that will hold the 'output' sub-folder",
+            parent=dlg
+        )
+        if folder:
+            out_var.set(folder)
+    
+    ttk.Button(frm, text="Browse…", command=browse_output_folder).grid(row=1, column=2, **pad)
 
     # Buttons
     btn_frm = ttk.Frame(frm)
