@@ -33,43 +33,31 @@ def install_sample_data():
         # Compute the true default directory (exactly what user_data_dir() returns when no custom is set)
         default_dir = str(Path(appdirs.user_data_dir(appname='Workforce Optimizer', appauthor=False)) / "data")
 
-        # Current target directory (default OR user-defined)
         target_dir = user_data_dir()
 
-        # ------------------------------------------------------------------
-        # CRITICAL FIX: Copy samples ONLY on a truly fresh install:
-        #   • No settings.json at all, OR settings.json exists but has NO "data_dir" key
-        #   • AND we are currently using the default directory
-        # This allows the Settings dialog to create settings.json (with output_dir etc.)
-        # without blocking the initial copy.
-        # ------------------------------------------------------------------
         settings = _load_settings()
 
         # If "data_dir" key exists (even if value == default_dir), user has explicitly set/changed it → never copy again
         if "data_dir" in settings:
             return
 
-        # Safety: if somehow target_dir is not the default (should never happen here), skip
         if target_dir != default_dir:
             return
 
-        # Create directory if missing
         if not os.path.exists(target_dir):
             os.makedirs(target_dir, exist_ok=True)
 
-        # Fast skip if any CSV already exists (prevents re-copy if user manually added files)
         if any(f.lower().endswith('.csv') for f in os.listdir(target_dir)):
-            return
+                return
 
         logging.info("Fresh install detected – copying sample data")
 
-        # Copy only what's missing (recursive)
         for src in glob.glob(os.path.join(src_dir, '**', '*.csv'), recursive=True):
-            rel = os.path.relpath(src, src_dir)
-            dst = os.path.join(target_dir, rel)
-            os.makedirs(os.path.dirname(dst), exist_ok=True)
-            shutil.copy2(src, dst)
-            logging.debug(f"Copied sample: {rel}")
+                rel = os.path.relpath(src, src_dir)
+                dst = os.path.join(target_dir, rel)
+                os.makedirs(os.path.dirname(dst), exist_ok=True)
+                shutil.copy2(src, dst)
+                logging.debug(f"Copied sample: {rel}")
 
     except Exception as e:
         logging.error(f"install_sample_data failed: {e}")
@@ -113,35 +101,42 @@ if __name__ == "__main__":
     if not check_trial_and_exit():
         sys.exit(0)
 
-    # === ULTRA-FAST SPLASH (< 0.5s) ===
+    # ------------------------------------------------------------------
+    # 1. Create the hidden root window (no geometry yet)
+    # ------------------------------------------------------------------
     root = tk.Tk()
-    root.withdraw()
+    root.withdraw()                     # keep it off-screen for now
     root.title("Workforce Optimizer")
-    root.geometry("400x200")
     try:
         root.iconbitmap(resource_path(r'icons\teamwork.ico'))
     except:
         pass
 
-    # --------------------------------------------------------------
-    #  main.py  – add Settings menu (place after you create the root)
-    # --------------------------------------------------------------
+    # ------------------------------------------------------------------
+    # 2. Add the **Settings** menu **before** the splash
+    # ------------------------------------------------------------------
     menubar = tk.Menu(root)
     root.config(menu=menubar)
 
-    # ---- File menu (if you already have one, keep it) ----
+    # ---- File menu ----------------------------------------------------
     file_menu = tk.Menu(menubar, tearoff=0)
     menubar.add_cascade(label="File", menu=file_menu)
-    file_menu.add_command(label="Exit", command=lambda: on_closing(emp_file_var, req_file_var, limits_file_var, root))
+    file_menu.add_command(
+        label="Exit",
+        command=lambda: on_closing(emp_file_var, req_file_var, limits_file_var, root)
+    )
 
     # ---- Settings menu ------------------------------------------------
     settings_menu = tk.Menu(menubar, tearoff=0)
     menubar.add_cascade(label="Settings", menu=settings_menu)
     settings_menu.add_command(
         label="Folder Locations…",
-        command=lambda: show_settings_dialog(root)   # <-- the function from utils.py
+        command=lambda: show_settings_dialog(root)   # from lib.utils
     )
 
+    # ------------------------------------------------------------------
+    # 3. Ultra-fast splash (shown while the heavy UI is built)
+    # ------------------------------------------------------------------
     splash = tk.Toplevel(root)
     splash.title("Loading...")
     splash.geometry("400x200")
@@ -149,161 +144,56 @@ if __name__ == "__main__":
     splash.overrideredirect(True)
     splash.configure(bg="#f8f9fa")
 
-    # Center splash
+    # centre the splash
     splash.update_idletasks()
     x = (splash.winfo_screenwidth() // 2) - (splash.winfo_width() // 2)
     y = (splash.winfo_screenheight() // 2) - (splash.winfo_height() // 2)
     splash.geometry(f"+{x}+{y}")
 
-    tk.Label(splash, text="Workforce Optimizer", font=("Arial", 16, "bold"), bg="#f8f9fa", fg="#212529").pack(pady=25)
-    tk.Label(splash, text="Initializing application...", font=("Arial", 10), bg="#f8f9fa", fg="#495057").pack(pady=5)
+    tk.Label(splash, text="Workforce Optimizer", font=("Arial", 16, "bold"),
+             bg="#f8f9fa", fg="#212529").pack(pady=25)
+    tk.Label(splash, text="Initializing application...", font=("Arial", 10),
+             bg="#f8f9fa", fg="#495057").pack(pady=5)
     progress = ttk.Progressbar(splash, mode='indeterminate', length=300)
     progress.pack(pady=20, padx=40)
     progress.start()
+    root.update()                       # force splash to appear immediately
 
-    root.update()
-
-    # === DEFERRED: Setup logging ===
+    # ------------------------------------------------------------------
+    # 4. DEFERRED heavy work (logging, sample data, UI build)
+    # ------------------------------------------------------------------
+    # ---- logging ----------------------------------------------------
     from lib.utils import user_log_dir
     from datetime import datetime
     import logging
     from logging.handlers import RotatingFileHandler
-    import sys
 
     log_dir = user_log_dir()
     os.makedirs(log_dir, exist_ok=True)
-    log_file = os.path.join(log_dir, f"workforce_optimizer_{datetime.now():%Y-%m-%d_%H-%M-%S}.log")
+    log_file = os.path.join(log_dir,
+                            f"workforce_optimizer_{datetime.now():%Y-%m-%d_%H-%M-%S}.log")
 
-    # Configure root logger
     logger = logging.getLogger()
     logger.setLevel(logging.DEBUG)
     for h in logger.handlers[:]:
         logger.removeHandler(h)
 
-    # File handler
-    file_handler = RotatingFileHandler(log_file, maxBytes=1_000_000, backupCount=5, encoding='utf-8')
+    file_handler = RotatingFileHandler(log_file, maxBytes=1_000_000,
+                                       backupCount=5, encoding='utf-8')
     file_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
     logger.addHandler(file_handler)
-
-    # Console (dev only)
-    # console_handler = logging.StreamHandler(sys.stdout)
-    # console_handler.setLevel(logging.DEBUG if not getattr(sys, 'frozen', False) else logging.INFO)
-    # console_handler.setFormatter(logging.Formatter('%(levelname)s: %(message)s'))
-    # logger.addHandler(console_handler)
 
     logging.debug("Logging system initialized")
     logging.info("Application startup")
 
-    # === DEFERRED: Copy sample data ===
+    # ---- copy sample data (only on fresh install) -------------------
     install_sample_data()
 
-    # === CLOSE SPLASH ===
-    splash.destroy()
-
-    # === NOW BUILD GUI ===
-    root.deiconify()
+    # ---- build the *full* GUI (still hidden) ------------------------
+    # (All the code that was previously under “NOW BUILD GUI”)
     root.geometry("1200x800")
     root.minsize(1000, 600)
 
-    # ------------------------------------------------------------------
-    # MODAL DIALOGS (run BEFORE any GUI widgets)
-    # ------------------------------------------------------------------
-    def show_disclaimer(parent):
-        text = (
-            "DISCLAIMER AND SECURITY STATEMENT\n\n"
-            "This Workforce Optimizer application is provided 'as is' without any warranties, express or implied, "
-            "including but not limited to warranties of merchantability, fitness for a particular purpose, or non-infringement. "
-            "The developers and contributors are not responsible for any damages, losses, or liabilities arising from the use of this software, "
-            "including but not limited to direct, indirect, incidental, or consequential damages.\n\n"
-            "This software is licensed for use by the original recipient only and is non-transferable. "
-            "All rights are reserved by the developers. Unauthorized distribution, modification, or commercial use is prohibited.\n\n"
-            "For support or inquiries, contact chris070411@gmail.com.\n\n"
-            "By using this application, you agree to these terms."
-        )
-        messagebox.showinfo("Disclaimer", text, parent=parent)
-
-    # ---- TRIAL DIALOG -------------------------------------------------
-    def show_trial_dialog(parent):
-        global TRIAL_PASSED
-        try:
-            from lib.trial import TrialManager
-            tm = TrialManager()
-        except Exception as e:
-            logging.error(f"Trial init failed: {e}", exc_info=True)
-            messagebox.showerror("Trial Error", f"Cannot start trial system:\n{e}")
-            sys.exit(1)
-
-        days = tm.days_left()
-        dlg = tk.Toplevel(parent)
-        dlg.title("Trial Status")
-        dlg.geometry("460x280")
-        dlg.transient(parent)
-        dlg.grab_set()
-
-        # Set icon
-        try:
-            dlg.iconbitmap(resource_path(r'icons\teamwork.ico'))
-        except Exception:
-            pass
-
-        # Center
-        dlg.update_idletasks()
-        x = parent.winfo_x() + (parent.winfo_width() // 2) - (dlg.winfo_width() // 2)
-        y = parent.winfo_y() + (parent.winfo_height() // 2) - (dlg.winfo_height() // 2)
-        dlg.geometry(f"+{x}+{y}")
-
-        # Disable X on expired
-        if days == 0:
-            dlg.protocol("WM_DELETE_WINDOW", lambda: None)
-        else:
-            dlg.protocol("WM_DELETE_WINDOW", dlg.destroy)
-
-        if tm.is_registered():
-            msg = "This copy is **registered** – full version."
-            show_register = False
-            btn_text = "Continue"
-            btn_cmd = lambda: [setattr(parent, 'TRIAL_PASSED', True), dlg.destroy()]
-        elif days == 0:
-            msg = ("**TRIAL EXPIRED**\n"
-                   "Contact chris070411@gmail.com for a registration code.")
-            show_register = True
-            btn_text = "Exit"
-            btn_cmd = lambda: [parent.quit(), sys.exit(0)]
-        else:
-            msg = (f"**{days} day{'s' if days != 1 else ''} left** in your 30-day trial.\n"
-                   "Contact chris070411@gmail.com for a registration code.")
-            show_register = True
-            btn_text = "Continue"
-            btn_cmd = lambda: [setattr(parent, 'TRIAL_PASSED', True), dlg.destroy()]
-
-        tk.Label(dlg, text=msg, justify="center", padx=20, pady=15, font=("Arial", 10)).pack()
-        if show_register:
-            frm = tk.Frame(dlg)
-            frm.pack(pady=8)
-            entry = tk.Entry(frm, width=30, justify="center")
-            entry.pack(side="left", padx=5)
-            def do_register():
-                ok, txt = tm.register(entry.get())
-                messagebox.showinfo("Registration", txt)
-                if ok:
-                    parent.TRIAL_PASSED = True
-                    dlg.destroy()
-            tk.Button(frm, text="Register", command=do_register).pack(side="left")
-        tk.Button(dlg, text=btn_text, command=btn_cmd).pack(pady=12)
-        parent.wait_window(dlg)
-
-    # === SHOW DIALOGS ===
-    show_disclaimer(root)
-    root.TRIAL_PASSED = False
-    show_trial_dialog(root)
-    if not root.TRIAL_PASSED:
-        logging.info("Trial expired or not passed — exiting")
-        root.quit()
-        sys.exit(0)
-
-    # ------------------------------------------------------------------
-    # GUI BUILD (only if we get here)
-    # ------------------------------------------------------------------
     canvas = tk.Canvas(root)
     scrollbar = ttk.Scrollbar(root, orient="vertical", command=canvas.yview)
     scrollable_frame = tk.Frame(canvas)
@@ -318,7 +208,7 @@ if __name__ == "__main__":
     scrollable_frame.bind("<Configure>", on_frame_configure)
     canvas.bind("<Configure>", on_frame_configure)
 
-    # Globals
+    # Globals (same as before)
     emp_file_var = tk.StringVar()
     req_file_var = tk.StringVar()
     limits_file_var = tk.StringVar()
@@ -468,18 +358,146 @@ if __name__ == "__main__":
     # FINAL SETUP
     # ------------------------------------------------------------------
     setup_gui()
-    from lib.config import load_config, on_closing
-    from lib.utils import adjust_column_widths, on_resize, on_mousewheel, user_data_dir
+    # ------------------------------------------------------------------
+    # 4. Close splash and **show** the fully-built window
+    # ------------------------------------------------------------------
+    splash.destroy()
+    root.deiconify()                     # now the UI appears
 
-    load_config(root, emp_file_var, req_file_var, limits_file_var)
-    root.bind("<Configure>", lambda e: on_resize(e, root, all_listboxes, all_input_trees, notebook, summary_text))
+    # ------------------------------------------------------------------
+    # 5. Restore saved geometry (or centre on first run)
+    # ------------------------------------------------------------------
+    from lib.config import load_config
+    config = load_config(root, emp_file_var, req_file_var, limits_file_var)
+    if config is None:
+        config = {}
+    if config.get("window_geometry"):
+        try:
+            root.geometry(config["window_geometry"])
+        except Exception:
+            pass
+    else:
+        # centre the main window when there is no saved geometry
+        root.update_idletasks()
+        w = root.winfo_width()
+        h = root.winfo_height()
+        x = (root.winfo_screenwidth() // 2) - (w // 2)
+        y = (root.winfo_screenheight() // 2) - (h // 2)
+        root.geometry(f"{w}x{h}+{x}+{y}")
+
+    # ------------------------------------------------------------------
+    # 6. Modal dialogs (Disclaimer → Trial)
+    # ------------------------------------------------------------------
+    def show_disclaimer(parent):
+        text = (
+            "DISCLAIMER AND SECURITY STATEMENT\n\n"
+            "This Workforce Optimizer application is provided 'as is' without any warranties, express or implied, "
+            "including but not limited to warranties of merchantability, fitness for a particular purpose, or non-infringement. "
+            "The developers and contributors are not responsible for any damages, losses, or liabilities arising from the use of this software, "
+            "including but not limited to direct, indirect, incidental, or consequential damages.\n\n"
+            "This software is licensed for use by the original recipient only and is non-transferable. "
+            "All rights are reserved by the developers. Unauthorized distribution, modification, or commercial use is prohibited.\n\n"
+            "For support or inquiries, contact chris070411@gmail.com.\n\n"
+            "By using this application, you agree to these terms."
+        )
+        messagebox.showinfo("Disclaimer", text, parent=parent)
+
+    def show_trial_dialog(parent):
+        global TRIAL_PASSED
+        try:
+            from lib.trial import TrialManager
+            tm = TrialManager()
+        except Exception as e:
+            logging.error(f"Trial init failed: {e}", exc_info=True)
+            messagebox.showerror("Trial Error", f"Cannot start trial system:\n{e}")
+            sys.exit(1)
+
+        days = tm.days_left()
+        dlg = tk.Toplevel(parent)
+        dlg.title("Trial Status")
+        dlg.geometry("460x280")
+        dlg.transient(parent)
+        dlg.grab_set()
+
+        # Set icon
+        try:
+            dlg.iconbitmap(resource_path(r'icons\teamwork.ico'))
+        except Exception:
+            pass
+
+        # Center
+        dlg.update_idletasks()
+        x = parent.winfo_x() + (parent.winfo_width() // 2) - (dlg.winfo_width() // 2)
+        y = parent.winfo_y() + (parent.winfo_height() // 2) - (dlg.winfo_height() // 2)
+        dlg.geometry(f"+{x}+{y}")
+
+        # Disable X on expired
+        if days == 0:
+            dlg.protocol("WM_DELETE_WINDOW", lambda: None)
+        else:
+            dlg.protocol("WM_DELETE_WINDOW", dlg.destroy)
+
+        if tm.is_registered():
+            msg = "This copy is **registered** – full version."
+            show_register = False
+            btn_text = "Continue"
+            btn_cmd = lambda: [setattr(parent, 'TRIAL_PASSED', True), dlg.destroy()]
+        elif days == 0:
+            msg = ("**TRIAL EXPIRED**\n"
+                   "Contact chris070411@gmail.com for a registration code.")
+            show_register = True
+            btn_text = "Exit"
+            btn_cmd = lambda: [parent.quit(), sys.exit(0)]
+        else:
+            msg = (f"**{days} day{'s' if days != 1 else ''} left** in your 30-day trial.\n"
+                   "Contact chris070411@gmail.com for a registration code.")
+            show_register = True
+            btn_text = "Continue"
+            btn_cmd = lambda: [setattr(parent, 'TRIAL_PASSED', True), dlg.destroy()]
+
+        tk.Label(dlg, text=msg, justify="center", padx=20, pady=15, font=("Arial", 10)).pack()
+        if show_register:
+            frm = tk.Frame(dlg)
+            frm.pack(pady=8)
+            entry = tk.Entry(frm, width=30, justify="center")
+            entry.pack(side="left", padx=5)
+            def do_register():
+                ok, txt = tm.register(entry.get())
+                messagebox.showinfo("Registration", txt)
+                if ok:
+                    parent.TRIAL_PASSED = True
+                    dlg.destroy()
+            tk.Button(frm, text="Register", command=do_register).pack(side="left")
+        tk.Button(dlg, text=btn_text, command=btn_cmd).pack(pady=12)
+        parent.wait_window(dlg)
+
+    show_disclaimer(root)
+    root.TRIAL_PASSED = False
+    show_trial_dialog(root)
+    if not root.TRIAL_PASSED:
+        logging.info("Trial expired or not passed — exiting")
+        root.quit()
+        sys.exit(0)
+
+    # ------------------------------------------------------------------
+    # 7. Final UI wiring (bindings, column widths, etc.)
+    # ------------------------------------------------------------------
+    from lib.utils import adjust_column_widths, on_resize, on_mousewheel, user_data_dir
+    from lib.config import on_closing
+
+    root.bind("<Configure>", lambda e: on_resize(e, root, all_listboxes,
+                                               all_input_trees, notebook, summary_text))
     root.bind("<MouseWheel>", lambda e: on_mousewheel(e, canvas))
-    root.protocol("WM_DELETE_WINDOW", lambda: on_closing(emp_file_var, req_file_var, limits_file_var, root))
+    root.protocol("WM_DELETE_WINDOW",
+                  lambda: on_closing(emp_file_var, req_file_var, limits_file_var, root))
+
     root.update_idletasks()
     adjust_column_widths(root, all_listboxes, all_input_trees, notebook, summary_text)
     logging.info("Application started")
 
-    # === START EVENT LOOP ===
+    # ------------------------------------------------------------------
+    # 8. Event loop
+    # ------------------------------------------------------------------
     try:
         root.mainloop()
     except KeyboardInterrupt:
