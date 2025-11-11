@@ -5,6 +5,7 @@ import shutil
 import glob
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
+from lib.utils import show_settings_dialog
 
 TRIAL_PASSED = False
 
@@ -26,14 +27,19 @@ def install_sample_data():
         from lib.utils import user_data_dir
         target_dir = user_data_dir()
         src_dir = resource_path('data')
-
+        
+        # Only copy to the default app data directory, never to user-defined custom folders
+        default_dir = str(Path(appdirs.user_data_dir(appname='Workforce Optimizer', appauthor=False)) / "data")
+        if target_dir != default_dir:
+            return  # Skip copy if user has set a custom data folder
+        
         if not os.path.exists(target_dir):
             os.makedirs(target_dir, exist_ok=True)
-
+        
         # Fast skip if any CSV exists
         if any(f.lower().endswith('.csv') for f in os.listdir(target_dir)):
             return
-
+        
         # Copy only what's missing
         for src in glob.glob(os.path.join(src_dir, '**', '*.csv'), recursive=True):
             rel = os.path.relpath(src, src_dir)
@@ -91,6 +97,25 @@ if __name__ == "__main__":
     except:
         pass
 
+    # --------------------------------------------------------------
+    #  main.py  – add Settings menu (place after you create the root)
+    # --------------------------------------------------------------
+    menubar = tk.Menu(root)
+    root.config(menu=menubar)
+
+    # ---- File menu (if you already have one, keep it) ----
+    file_menu = tk.Menu(menubar, tearoff=0)
+    menubar.add_cascade(label="File", menu=file_menu)
+    file_menu.add_command(label="Exit", command=lambda: on_closing(emp_file_var, req_file_var, limits_file_var, root))
+
+    # ---- Settings menu ------------------------------------------------
+    settings_menu = tk.Menu(menubar, tearoff=0)
+    menubar.add_cascade(label="Settings", menu=settings_menu)
+    settings_menu.add_command(
+        label="Folder Locations…",
+        command=lambda: show_settings_dialog(root)   # <-- the function from utils.py
+    )
+
     splash = tk.Toplevel(root)
     splash.title("Loading...")
     splash.geometry("400x200")
@@ -116,15 +141,31 @@ if __name__ == "__main__":
     from lib.utils import user_log_dir
     from datetime import datetime
     import logging
+    from logging.handlers import RotatingFileHandler
+    import sys
 
     log_dir = user_log_dir()
     os.makedirs(log_dir, exist_ok=True)
     log_file = os.path.join(log_dir, f"workforce_optimizer_{datetime.now():%Y-%m-%d_%H-%M-%S}.log")
-    logging.basicConfig(
-        level=logging.DEBUG,
-        format='%(asctime)s - %(levelname)s - %(message)s',
-        handlers=[logging.FileHandler(log_file, encoding='utf-8')]
-    )
+
+    # Configure root logger
+    logger = logging.getLogger()
+    logger.setLevel(logging.DEBUG)
+    for h in logger.handlers[:]:
+        logger.removeHandler(h)
+
+    # File handler
+    file_handler = RotatingFileHandler(log_file, maxBytes=1_000_000, backupCount=5, encoding='utf-8')
+    file_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
+    logger.addHandler(file_handler)
+
+    # Console (dev only)
+    # console_handler = logging.StreamHandler(sys.stdout)
+    # console_handler.setLevel(logging.DEBUG if not getattr(sys, 'frozen', False) else logging.INFO)
+    # console_handler.setFormatter(logging.Formatter('%(levelname)s: %(message)s'))
+    # logger.addHandler(console_handler)
+
+    logging.debug("Logging system initialized")
     logging.info("Application startup")
 
     # === DEFERRED: Copy sample data ===
@@ -172,6 +213,12 @@ if __name__ == "__main__":
         dlg.geometry("460x280")
         dlg.transient(parent)
         dlg.grab_set()
+
+        # Set icon
+        try:
+            dlg.iconbitmap(resource_path(r'icons\teamwork.ico'))
+        except Exception:
+            pass
 
         # Center
         dlg.update_idletasks()
@@ -273,10 +320,10 @@ if __name__ == "__main__":
                     return
                 from lib.gui_handlers import generate_schedule
                 generate_schedule(
-                    emp_path, req_path, limits_path,
+                    emp_file_var, req_file_var, limits_file_var,
                     start_date_entry, num_weeks_var,
-                    None, None,
-                    summary_text, viz_frame, root, notebook, schedule_container
+                    summary_text, viz_frame, root, notebook, schedule_container,
+                    emp_frame, req_frame, limits_frame
                 )
                 from lib.data_loader import load_csv
                 result = load_csv(emp_path, req_path, limits_path, start_date, num_weeks)
@@ -367,12 +414,13 @@ if __name__ == "__main__":
 
         # === BUTTONS ===
         from lib.gui_handlers import display_input_data, save_input_data, save_schedule_changes
+
         tk.Button(scrollable_frame, text="View Input Data", command=lambda: display_input_data(
             emp_file_var.get(), req_file_var.get(), limits_file_var.get(),
             emp_frame, req_frame, limits_frame, root, notebook, summary_text
         )).pack(pady=5)
         tk.Button(scrollable_frame, text="Save Input Data", command=lambda: save_input_data(
-            emp_file_var.get(), req_file_var.get(), limits_file_var.get(),
+            emp_file_var, req_file_var, limits_file_var,
             emp_frame, req_frame, limits_frame, root
         )).pack(pady=5)
         tk.Button(scrollable_frame, text="Generate Schedule", command=generate_and_store_areas).pack(pady=10)
