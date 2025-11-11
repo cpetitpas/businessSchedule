@@ -70,9 +70,10 @@ def check_trial_and_exit():
     try:
         from lib.trial import TrialManager
         tm = TrialManager()
-        if tm.is_registered():
-            return True
-        days = tm.days_left()
+
+        # === EARLY EXIT LOGIC: Block if expired (trial OR license) ===
+        days = tm.days_left()  # This respects BOTH test overrides
+
         if days == 0:
             root = tk.Tk()
             root.withdraw()
@@ -81,17 +82,19 @@ def check_trial_and_exit():
             except:
                 pass
             msg = (
-                "TRIAL EXPIRED\n\n"
-                "Your 30-day trial has ended.\n"
+                "LICENSE EXPIRED\n\n"
+                "Your 30-day trial or 1-year license has ended.\n"
                 "To continue using Workforce Optimizer,\n"
-                "please purchase a license.\n\n"
+                "please purchase a new license.\n\n"
                 "Contact: chris070411@gmail.com"
             )
-            messagebox.showwarning("Trial Expired", msg, parent=root)
+            messagebox.showwarning("License Expired", msg, parent=root)
             root.destroy()
-            return False
-        return True
-    except Exception:
+            return False  # BLOCK APP
+        return True  # ALLOW APP
+
+    except Exception as e:
+        logging.error(f"check_trial_and_exit failed: {e}", exc_info=True)
         return True  # Never block startup
 
 # ---------------------------------------------------------------
@@ -404,80 +407,86 @@ if __name__ == "__main__":
 
     def show_trial_dialog(parent):
         global TRIAL_PASSED
-        try:
-            from lib.trial import TrialManager
-            tm = TrialManager()
-        except Exception as e:
-            logging.error(f"Trial init failed: {e}", exc_info=True)
-            messagebox.showerror("Trial Error", f"Cannot start trial system:\n{e}")
-            sys.exit(1)
 
-        days = tm.days_left()
         dlg = tk.Toplevel(parent)
-        dlg.title("Trial Status")
+        dlg.title("License Status")
         dlg.geometry("460x280")
         dlg.transient(parent)
         dlg.grab_set()
 
-        # Set icon
         try:
             dlg.iconbitmap(resource_path(r'icons\teamwork.ico'))
-        except Exception:
+        except:
             pass
 
-        # Center
         dlg.update_idletasks()
         x = parent.winfo_x() + (parent.winfo_width() // 2) - (dlg.winfo_width() // 2)
         y = parent.winfo_y() + (parent.winfo_height() // 2) - (dlg.winfo_height() // 2)
         dlg.geometry(f"+{x}+{y}")
 
-        # Disable X on expired
-        if days == 0:
-            dlg.protocol("WM_DELETE_WINDOW", lambda: None)
-        else:
-            dlg.protocol("WM_DELETE_WINDOW", dlg.destroy)
+        try:
+            from lib.trial import TrialManager
+            tm = TrialManager()
+            days = tm.days_left()
 
-        if tm.is_registered():
-            msg = "This copy is **registered** – full version."
+            if days == 0:
+                # EXPIRED — NO CONTINUE
+                msg = ("**LICENSE EXPIRED**\n\n"
+                    "Your 30-day trial or 1-year license has ended.\n"
+                    "To continue using Workforce Optimizer,\n"
+                    "please purchase a new license.\n\n"
+                    "Contact: chris070411@gmail.com")
+                show_register = True
+                btn_text = "Exit"
+                btn_cmd = lambda: [parent.quit(), sys.exit(0)]
+                dlg.protocol("WM_DELETE_WINDOW", lambda: None)
+            elif tm.is_registered():
+                msg = (f"**{days} day{'s' if days != 1 else ''} left** in your 1-year license.\n"
+                    "Contact chris070411@gmail.com for renewal.")
+                show_register = False
+                btn_text = "Continue"
+                btn_cmd = lambda: [setattr(parent, 'TRIAL_PASSED', True), dlg.destroy()]
+            else:
+                msg = (f"**{days} day{'s' if days != 1 else ''} left** in your 30-day trial.\n"
+                    "Contact chris070411@gmail.com for a registration code.")
+                show_register = True
+                btn_text = "Continue"
+                btn_cmd = lambda: [setattr(parent, 'TRIAL_PASSED', True), dlg.destroy()]
+
+        except Exception as e:
+            logging.error(f"Trial system error: {e}", exc_info=True)
+            msg = f"License error:\n{e}"
             show_register = False
-            btn_text = "Continue"
-            btn_cmd = lambda: [setattr(parent, 'TRIAL_PASSED', True), dlg.destroy()]
-        elif days == 0:
-            msg = ("**TRIAL EXPIRED**\n"
-                   "Contact chris070411@gmail.com for a registration code.")
-            show_register = True
             btn_text = "Exit"
             btn_cmd = lambda: [parent.quit(), sys.exit(0)]
-        else:
-            msg = (f"**{days} day{'s' if days != 1 else ''} left** in your 30-day trial.\n"
-                   "Contact chris070411@gmail.com for a registration code.")
-            show_register = True
-            btn_text = "Continue"
-            btn_cmd = lambda: [setattr(parent, 'TRIAL_PASSED', True), dlg.destroy()]
 
         tk.Label(dlg, text=msg, justify="center", padx=20, pady=15, font=("Arial", 10)).pack()
+
         if show_register:
             frm = tk.Frame(dlg)
             frm.pack(pady=8)
             entry = tk.Entry(frm, width=30, justify="center")
             entry.pack(side="left", padx=5)
+
             def do_register():
-                ok, txt = tm.register(entry.get())
-                messagebox.showinfo("Registration", txt)
-                if ok:
-                    parent.TRIAL_PASSED = True
-                    dlg.destroy()
+                try:
+                    from lib.trial import TrialManager
+                    tm2 = TrialManager()
+                    ok, txt = tm2.register(entry.get())
+                    messagebox.showinfo("Registration", txt)
+                    if ok:
+                        parent.TRIAL_PASSED = True
+                        dlg.destroy()
+                except Exception as e:
+                    messagebox.showerror("Error", f"Registration failed:\n{e}")
+
             tk.Button(frm, text="Register", command=do_register).pack(side="left")
+
         tk.Button(dlg, text=btn_text, command=btn_cmd).pack(pady=12)
         parent.wait_window(dlg)
 
     show_disclaimer(root)
-    root.TRIAL_PASSED = False
     show_trial_dialog(root)
-    if not root.TRIAL_PASSED:
-        logging.info("Trial expired or not passed — exiting")
-        root.quit()
-        sys.exit(0)
 
     # ------------------------------------------------------------------
     # 7. Final UI wiring (bindings, column widths, etc.)

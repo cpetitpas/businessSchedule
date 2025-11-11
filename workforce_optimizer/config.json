@@ -1,6 +1,6 @@
 {
-    "emp_file": "C:\\Users\\chris\\Documents\\WorkforceOpt\\InputData\\Employee_Data.csv",
-    "req_file": "C:\\Users\\chris\\Documents\\WorkforceOpt\\InputData\\Personnel_Required.csv",
-    "limits_file": "C:\\Users\\chris\\Documents\\WorkforceOpt\\InputData\\Hard_Limits.csv",
-    "window_geometry": "2055x1047+693+197"
+    "emp_file": "",
+    "req_file": "",
+    "limits_file": "",
+    "window_geometry": "1567x879+937+281"
 }
