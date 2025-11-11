@@ -24,29 +24,55 @@ def resource_path(relative_path):
 # ---------------------------------------------------------------
 def install_sample_data():
     try:
-        from lib.utils import user_data_dir
-        target_dir = user_data_dir()
+        import appdirs
+        from pathlib import Path
+        from lib.utils import user_data_dir, _load_settings
+
         src_dir = resource_path('data')
-        
-        # Only copy to the default app data directory, never to user-defined custom folders
+
+        # Compute the true default directory (exactly what user_data_dir() returns when no custom is set)
         default_dir = str(Path(appdirs.user_data_dir(appname='Workforce Optimizer', appauthor=False)) / "data")
+
+        # Current target directory (default OR user-defined)
+        target_dir = user_data_dir()
+
+        # ------------------------------------------------------------------
+        # CRITICAL FIX: Copy samples ONLY on a truly fresh install:
+        #   • No settings.json at all, OR settings.json exists but has NO "data_dir" key
+        #   • AND we are currently using the default directory
+        # This allows the Settings dialog to create settings.json (with output_dir etc.)
+        # without blocking the initial copy.
+        # ------------------------------------------------------------------
+        settings = _load_settings()
+
+        # If "data_dir" key exists (even if value == default_dir), user has explicitly set/changed it → never copy again
+        if "data_dir" in settings:
+            return
+
+        # Safety: if somehow target_dir is not the default (should never happen here), skip
         if target_dir != default_dir:
-            return  # Skip copy if user has set a custom data folder
-        
+            return
+
+        # Create directory if missing
         if not os.path.exists(target_dir):
             os.makedirs(target_dir, exist_ok=True)
-        
-        # Fast skip if any CSV exists
+
+        # Fast skip if any CSV already exists (prevents re-copy if user manually added files)
         if any(f.lower().endswith('.csv') for f in os.listdir(target_dir)):
             return
-        
-        # Copy only what's missing
+
+        logging.info("Fresh install detected – copying sample data")
+
+        # Copy only what's missing (recursive)
         for src in glob.glob(os.path.join(src_dir, '**', '*.csv'), recursive=True):
             rel = os.path.relpath(src, src_dir)
             dst = os.path.join(target_dir, rel)
             os.makedirs(os.path.dirname(dst), exist_ok=True)
             shutil.copy2(src, dst)
-    except Exception:
+            logging.debug(f"Copied sample: {rel}")
+
+    except Exception as e:
+        logging.error(f"install_sample_data failed: {e}")
         pass  # Silent fail – user sees missing data later
 
 # ---------------------------------------------------------------
