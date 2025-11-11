@@ -27,14 +27,19 @@ def install_sample_data():
         from lib.utils import user_data_dir
         target_dir = user_data_dir()
         src_dir = resource_path('data')
-
+        
+        # Only copy to the default app data directory, never to user-defined custom folders
+        default_dir = str(Path(appdirs.user_data_dir(appname='Workforce Optimizer', appauthor=False)) / "data")
+        if target_dir != default_dir:
+            return  # Skip copy if user has set a custom data folder
+        
         if not os.path.exists(target_dir):
             os.makedirs(target_dir, exist_ok=True)
-
+        
         # Fast skip if any CSV exists
         if any(f.lower().endswith('.csv') for f in os.listdir(target_dir)):
             return
-
+        
         # Copy only what's missing
         for src in glob.glob(os.path.join(src_dir, '**', '*.csv'), recursive=True):
             rel = os.path.relpath(src, src_dir)
@@ -315,10 +320,10 @@ if __name__ == "__main__":
                     return
                 from lib.gui_handlers import generate_schedule
                 generate_schedule(
-                    emp_path, req_path, limits_path,
+                    emp_file_var, req_file_var, limits_file_var,
                     start_date_entry, num_weeks_var,
-                    None, None,
-                    summary_text, viz_frame, root, notebook, schedule_container
+                    summary_text, viz_frame, root, notebook, schedule_container,
+                    emp_frame, req_frame, limits_frame
                 )
                 from lib.data_loader import load_csv
                 result = load_csv(emp_path, req_path, limits_path, start_date, num_weeks)
@@ -409,12 +414,13 @@ if __name__ == "__main__":
 
         # === BUTTONS ===
         from lib.gui_handlers import display_input_data, save_input_data, save_schedule_changes
+
         tk.Button(scrollable_frame, text="View Input Data", command=lambda: display_input_data(
             emp_file_var.get(), req_file_var.get(), limits_file_var.get(),
             emp_frame, req_frame, limits_frame, root, notebook, summary_text
         )).pack(pady=5)
         tk.Button(scrollable_frame, text="Save Input Data", command=lambda: save_input_data(
-            emp_file_var.get(), req_file_var.get(), limits_file_var.get(),
+            emp_file_var, req_file_var, limits_file_var,
             emp_frame, req_frame, limits_frame, root
         )).pack(pady=5)
         tk.Button(scrollable_frame, text="Generate Schedule", command=generate_and_store_areas).pack(pady=10)

@@ -1,4 +1,4 @@
-# lib/trial.py
+# trial.py
 import os
 import json
 import base64
