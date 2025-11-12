@@ -72,7 +72,7 @@ def check_trial_and_exit():
         tm = TrialManager()
 
         # === EARLY EXIT LOGIC: Block if expired (trial OR license) ===
-        days = tm.days_left()  # This respects BOTH test overrides
+        days = tm.days_left()  
 
         if days == 0:
             root = tk.Tk()
@@ -90,8 +90,8 @@ def check_trial_and_exit():
             )
             messagebox.showwarning("License Expired", msg, parent=root)
             root.destroy()
-            return False  # BLOCK APP
-        return True  # ALLOW APP
+            return False  
+        return True  
 
     except Exception as e:
         logging.error(f"check_trial_and_exit failed: {e}", exc_info=True)
@@ -147,7 +147,6 @@ if __name__ == "__main__":
     splash.overrideredirect(True)
     splash.configure(bg="#f8f9fa")
 
-    # centre the splash
     splash.update_idletasks()
     x = (splash.winfo_screenwidth() // 2) - (splash.winfo_width() // 2)
     y = (splash.winfo_screenheight() // 2) - (splash.winfo_height() // 2)
@@ -269,11 +268,21 @@ if __name__ == "__main__":
             tk.Label(scrollable_frame, text="Company Logo", font=("Arial", 12, "bold"), fg="blue", relief="ridge", padx=20, pady=10).pack()
 
         # === DATE & WEEKS ===
-        tk.Label(scrollable_frame, text="Select Start Date:").pack(pady=5)
-        start_date_entry = DateEntry(scrollable_frame, width=12, background='darkblue', foreground='white', borderwidth=2, year=2025, firstweekday='sunday')
+        date_weeks_frame = tk.Frame(scrollable_frame)
+        date_weeks_frame.pack(pady=10)
+        
+        # Left side: Date
+        date_col = tk.Frame(date_weeks_frame)
+        date_col.pack(side="left", padx=20)
+        tk.Label(date_col, text="Select Start Date:").pack()
+        start_date_entry = DateEntry(date_col, width=12, background='darkblue', foreground='white', borderwidth=2, year=2025, firstweekday='sunday')
         start_date_entry.pack(pady=5)
-        tk.Label(scrollable_frame, text="Number of Weeks (1 or more):").pack(pady=5)
-        tk.Entry(scrollable_frame, textvariable=num_weeks_var, width=10).pack(pady=5)
+        
+        # Right side: Weeks
+        weeks_col = tk.Frame(date_weeks_frame)
+        weeks_col.pack(side="left", padx=20)
+        tk.Label(weeks_col, text="Number of Weeks (1 or more):").pack()
+        tk.Entry(weeks_col, textvariable=num_weeks_var, width=10).pack(pady=5)
 
         # === FILE SELECTION ===
         file_frame = tk.Frame(scrollable_frame)
@@ -334,18 +343,25 @@ if __name__ == "__main__":
         # === BUTTONS ===
         from lib.gui_handlers import display_input_data, save_input_data, save_schedule_changes
 
-        tk.Button(scrollable_frame, text="View Input Data", command=lambda: display_input_data(
+        # First row: View and Save Input Data buttons
+        btn_row1 = tk.Frame(scrollable_frame)
+        btn_row1.pack(pady=5)
+        tk.Button(btn_row1, text="View Input Data", command=lambda: display_input_data(
             emp_file_var.get(), req_file_var.get(), limits_file_var.get(),
             emp_frame, req_frame, limits_frame, root, notebook, summary_text
-        )).pack(pady=5)
-        tk.Button(scrollable_frame, text="Save Input Data", command=lambda: save_input_data(
+        )).pack(side="left", padx=5)
+        tk.Button(btn_row1, text="Save Input Data", command=lambda: save_input_data(
             emp_file_var, req_file_var, limits_file_var,
             emp_frame, req_frame, limits_frame, root
-        )).pack(pady=5)
-        tk.Button(scrollable_frame, text="Generate Schedule", command=generate_and_store_areas).pack(pady=10)
-        tk.Button(scrollable_frame, text="Save Schedule Changes", command=lambda: save_schedule_changes(
+        )).pack(side="left", padx=5)
+        
+        # Second row: Generate Schedule and Save Schedule Changes buttons
+        btn_row2 = tk.Frame(scrollable_frame)
+        btn_row2.pack(pady=5)
+        tk.Button(btn_row2, text="Generate Schedule", command=generate_and_store_areas).pack(side="left", padx=5)
+        tk.Button(btn_row2, text="Save Schedule Changes", command=lambda: save_schedule_changes(
             start_date_entry.get_date(), root, schedule_container, current_areas
-        )).pack(pady=10)
+        )).pack(side="left", padx=5)
 
         # === SCHEDULES ===
         tk.Label(scrollable_frame, text="Schedules", font=("Arial", 12, "bold")).pack(pady=(20, 5), anchor="center")
