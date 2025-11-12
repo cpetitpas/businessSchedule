@@ -4,6 +4,8 @@ import sys
 import shutil
 import glob
 import tkinter as tk
+import webbrowser
+from pathlib import Path
 from tkinter import ttk, messagebox, filedialog
 from lib.utils import show_settings_dialog
 
@@ -18,6 +20,16 @@ def resource_path(relative_path):
     else:
         base = os.path.abspath(os.path.dirname(__file__))
     return os.path.join(base, relative_path)
+
+def open_user_guide():
+    """Open the local user guide (PDF or HTML) using system default viewer."""
+    doc_path = resource_path(os.path.join('docs', 'UserGuide.pdf'))
+    try:
+        # Convert to file:// URL for cross-platform safety
+        url = Path(doc_path).as_uri()
+        webbrowser.open(url)
+    except Exception as e:
+        messagebox.showerror("Help Error", f"Could not open documentation:\n{e}")
 
 # ---------------------------------------------------------------
 # install_sample_data() – lazy copy, only if missing
@@ -136,6 +148,14 @@ if __name__ == "__main__":
         label="Folder Locations…",
         command=lambda: show_settings_dialog(root)   # from lib.utils
     )
+
+    # ---- Help menu ----------------------------------------------------
+    help_menu = tk.Menu(menubar, tearoff=0)
+    menubar.add_cascade(label="Help", menu=help_menu)
+    help_menu.add_command(
+        label="User Guide",
+        command=open_user_guide
+)
 
     # ------------------------------------------------------------------
     # 3. Ultra-fast splash (shown while the heavy UI is built)

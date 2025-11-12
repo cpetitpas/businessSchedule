@@ -25,7 +25,7 @@ CBC_SOURCE = find_cbc()
 CBC_TARGET_DIR = 'pulp/solverdir/cbc/win/i64'
 
 datas = []
-for folder in ['images', 'data']:
+for folder in ['images', 'data', 'docs']:
     if os.path.isdir(folder):
         for p in glob.glob(os.path.join(folder, '**', '*.*'), recursive=True):
             dest = os.path.relpath(os.path.dirname(p), folder)

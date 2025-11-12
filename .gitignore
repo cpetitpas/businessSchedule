@@ -9,3 +9,4 @@ workforce_optimizer/lib/__pycache__/
 workforce_optimizer/build/*
 workforce_optimizer/dist/*
 workforce_optimizer/output/*
+workforce_optimizer/docs/*.doc
