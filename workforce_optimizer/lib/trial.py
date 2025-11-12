@@ -1,9 +1,9 @@
-# trial.py
+# lib/trial.py
 import os
 import json
 import base64
 import hashlib
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from cryptography.hazmat.backends import default_backend
@@ -12,14 +12,15 @@ import logging
 import winreg
 
 APP_NAME = "Workforce Optimizer"
-AUTHOR   = "Chris"
+AUTHOR = "Chris"
 TRIAL_DAYS = 30
+LICENSE_DAYS = 365
 
-# 32-byte key (decoded from base64)
 SECRET_KEY = base64.urlsafe_b64decode('LjPORB9ANrbEpCgGse3Ww-3v1gpsbeF0TV-blAc_1rk=')
-FIXED_IV = b'WorkforceOpt1234'  # 16 bytes
+FIXED_IV = b'WorkforceOpt1234'
 
-TEST_OVERRIDE_DAYS_LEFT = None  # Set to 0 to test expiry
+TEST_OVERRIDE_DAYS_LEFT = None
+TEST_OVERRIDE_LICENSE_DAYS_LEFT = None
 
 dirs = appdirs.AppDirs(APP_NAME, appauthor=False)
 TRIAL_FILE = Path(dirs.user_data_dir) / "data" / "trial.dat"
@@ -102,24 +103,51 @@ class TrialManager:
         self._save_to_registry(self.data)
 
     def is_registered(self) -> bool:
-        return self.data.get("registered", False)
+        if not self.data.get("registered", False):
+            return False
+        reg_date_str = self.data.get("reg_date")
+        if not reg_date_str:
+            return True  # legacy permanent
+        try:
+            reg_date = datetime.fromisoformat(reg_date_str).date()
+            expiry = reg_date + timedelta(days=LICENSE_DAYS)
+            return datetime.now().date() <= expiry
+        except:
+            return True
 
     def days_left(self) -> int:
-        if self.is_registered():
-            return 999
-        if TEST_OVERRIDE_DAYS_LEFT is not None:
+        # --- TEST OVERRIDE: License days left ---
+        if TEST_OVERRIDE_LICENSE_DAYS_LEFT is not None and self.data.get("registered", False):
+            return max(0, TEST_OVERRIDE_LICENSE_DAYS_LEFT)
+
+        # --- TEST OVERRIDE: Trial days left ---
+        if TEST_OVERRIDE_DAYS_LEFT is not None and not self.data.get("registered", False):
             return max(0, TEST_OVERRIDE_DAYS_LEFT)
-        start = datetime.fromisoformat(self.data["start"]).date()
-        elapsed = (datetime.now().date() - start).days
-        return max(0, TRIAL_DAYS - elapsed)
+
+        if not self.is_registered():
+            start = datetime.fromisoformat(self.data["start"]).date()
+            elapsed = (datetime.now().date() - start).days
+            return max(0, TRIAL_DAYS - elapsed)
+
+        reg_date_str = self.data.get("reg_date")
+        if not reg_date_str:
+            return 999  # legacy permanent
+
+        try:
+            reg_date = datetime.fromisoformat(reg_date_str).date()
+            expiry = reg_date + timedelta(days=LICENSE_DAYS)
+            return max(0, (expiry - datetime.now().date()).days)
+        except:
+            return 999
 
     def register(self, code: str) -> tuple[bool, str]:
         expected = self._make_code()
-        if code.strip() == expected:
-            self.data["registered"] = True
-            self._sync_all_sources()
-            return True, "Registration successful!"
-        return False, "Invalid code."
+        if code.strip() != expected:
+            return False, "Invalid code."
+        self.data["registered"] = True
+        self.data["reg_date"] = datetime.now().date().isoformat()
+        self._sync_all_sources()
+        return True, "Registration successful! License valid for 1 year."
 
     def _make_code(self) -> str:
         payload = f"{APP_NAME}|{AUTHOR}|{self.data['start']}"
