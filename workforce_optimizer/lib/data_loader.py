@@ -63,9 +63,9 @@ def load_csv(emp_file, req_file, limits_file, start_date, num_weeks_var):
 
         # === 4. Shift Preferences ===
         shift_prefs = {}
-        shift_row = "shift weight"
+        shift_row = "preferred shift"
         if shift_row not in emp_df.index:
-            raise ValueError("Cannot find 'Shift Weight' row in Employee_Data.csv")
+            raise ValueError("Cannot find 'Preferred Shift' row in Employee_Data.csv")
         for emp in employees:
             shift = str(emp_df.loc[shift_row, emp]).strip().lower()
             shift_prefs[emp] = {s: 0 for s in shifts}
@@ -80,9 +80,9 @@ def load_csv(emp_file, req_file, limits_file, start_date, num_weeks_var):
         # === 5. Day Preferences ===
         days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
         day_prefs = {}
-        day_row = "day weights"
+        day_row = "preferred days"
         if day_row not in emp_df.index:
-            raise ValueError("Cannot find 'Day Weights' row in Employee_Data.csv")
+            raise ValueError("Cannot find 'Preferred Days' row in Employee_Data.csv")
         for emp in employees:
             day_str = emp_df.loc[day_row, emp]
             preferred_days = []
@@ -91,7 +91,7 @@ def load_csv(emp_file, req_file, limits_file, start_date, num_weeks_var):
                     preferred_days = [d.strip() for d in str(day_str).split(", ")]
                     preferred_days = [d for d in preferred_days if d in days]
                 except Exception as e:
-                    logging.warning("Failed to parse day weights for %s: %s", emp, str(e))
+                    logging.warning("Failed to parse preferred days for %s: %s", emp, str(e))
             day_prefs[emp] = {d: 10 if d in preferred_days else 0 for d in days}
 
         # === 6. Must-Off Dates ===
@@ -165,7 +165,7 @@ def load_csv(emp_file, req_file, limits_file, start_date, num_weeks_var):
         # === 9. Constraints ===
         constraints = {
             "max_shifts_per_day": 1,
-            "violate_order": ["Day Weights", "Shift Weight", "Max Number of Weekend Days", "Min Shifts per Week"]
+            "violate_order": ["Preferred Days", "Preferred Shift", "Max Number of Weekend Days", "Min Shifts per Week"]
         }
 
         if "Max Number of Shifts per Day" in limits_df.columns:

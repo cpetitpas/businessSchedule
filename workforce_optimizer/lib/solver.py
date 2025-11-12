@@ -199,8 +199,8 @@ def solve_schedule(employees, days, shifts, areas, shift_prefs, day_prefs, must_
     # --------------------------------------------------
 
     possible_rules = {
-        "Day Weights": 'relax_day',
-        "Shift Weights": 'relax_shift',
+        "Preferred Days": 'relax_day',
+        "Preferred Shift": 'relax_shift',
         "Max Number of Weekend Days": 'relax_weekend',
         "Max Shifts per Week": 'relax_max_shifts',
         "Min Shifts per Week": 'relax_min_shifts'
