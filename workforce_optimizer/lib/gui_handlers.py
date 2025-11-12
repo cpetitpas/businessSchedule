@@ -199,7 +199,7 @@ def on_tree_double_click(tree, event, has_index):
     col_name = tree["columns"][col_idx]
     # Don't allow editing the first column for tables with index (Employee Data, Personnel Required)
     # Only allow first column editing for Hard Limits (has_index=False)
-    if col_idx == 0 and has_index:
+    if col_idx == 0 and has_index == False:
         return
     current_value = tree.set(item, col_name)
     entry = tk.Entry(tree)
