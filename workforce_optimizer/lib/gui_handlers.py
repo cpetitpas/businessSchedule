@@ -40,7 +40,7 @@ def display_input_data(emp_path, req_path, limits_path, emp_frame, req_frame, li
         frame.columnconfigure(0, weight=1)
         tree_frame = ttk.Frame(frame)
         tree_frame.grid(row=0, column=0, sticky="nsew")
-        tree = ttk.Treeview(tree_frame, show="headings")
+        tree = ttk.Treeview(tree_frame, show="headings", selectmode='none')
         vsb = ttk.Scrollbar(tree_frame, orient="vertical", command=tree.yview)
         hsb = ttk.Scrollbar(tree_frame, orient="horizontal", command=tree.xview)
         tree.configure(yscrollcommand=vsb.set, xscrollcommand=hsb.set)
@@ -227,8 +227,8 @@ def edit_schedule_cell(tree, event, area, emp_file_path):
     if col_idx == 0:
         return
     # Highlight the selected cell
-    tree.selection_set(item)
     tree.focus(item)
+    tree.selection_remove(tree.selection())
     cell_value = tree.set(item, col)
     col_name = tree.heading(col)['text'] # Get the column header text (includes date)
     shift_name = tree.set(item, tree["columns"][0]) # Get the shift name
@@ -492,7 +492,7 @@ def create_schedule_treeview(parent, week, start_date, shifts, actual_days):
 
     tree_frame = ttk.Frame(week_frame)
     tree_frame.pack(fill="both", expand=False)
-    tree = ttk.Treeview(tree_frame, show="headings", height=len(shifts))
+    tree = ttk.Treeview(tree_frame, show="headings", height=len(shifts), selectmode='none')
     vsb = ttk.Scrollbar(tree_frame, orient="vertical", command=tree.yview)
     hsb = ttk.Scrollbar(tree_frame, orient="horizontal", command=tree.xview)
     tree.configure(yscrollcommand=vsb.set, xscrollcommand=hsb.set)
