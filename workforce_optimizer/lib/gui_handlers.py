@@ -40,7 +40,7 @@ def display_input_data(emp_path, req_path, limits_path, emp_frame, req_frame, li
         frame.columnconfigure(0, weight=1)
         tree_frame = ttk.Frame(frame)
         tree_frame.grid(row=0, column=0, sticky="nsew")
-        tree = ttk.Treeview(tree_frame, show="headings")
+        tree = ttk.Treeview(tree_frame, show="headings", selectmode='none')
         vsb = ttk.Scrollbar(tree_frame, orient="vertical", command=tree.yview)
         hsb = ttk.Scrollbar(tree_frame, orient="horizontal", command=tree.xview)
         tree.configure(yscrollcommand=vsb.set, xscrollcommand=hsb.set)
@@ -216,138 +216,140 @@ def on_tree_double_click(tree, event, has_index):
 
 def edit_schedule_cell(tree, event, area, emp_file_path):
     """
-    Handle double-click on schedule Treeview to add or remove employees.
+    Double-click schedule cell → show white Entry box (like input) → open dialog.
     """
     item = tree.identify_row(event.y)
     col = tree.identify_column(event.x)
     if not item or not col:
         return
     col_idx = int(col.replace('#', '')) - 1
-    # Don't allow editing the first column (Day/Shift headers)
-    if col_idx == 0:
+    if col_idx == 0:  # Day/Shift
         return
-    # Highlight the selected cell
-    tree.selection_set(item)
-    tree.focus(item)
-    cell_value = tree.set(item, col)
-    col_name = tree.heading(col)['text'] # Get the column header text (includes date)
-    shift_name = tree.set(item, tree["columns"][0]) # Get the shift name
-    names = [n.strip() for n in cell_value.split(',') if n.strip()]
-    logging.info(f"Editing {area} schedule cell ({item}, {col}) with current names: {names}")
-    try:
-        emp_df = pd.read_csv(emp_file_path, index_col="Employee/Input")
-        emp_df = emp_df.transpose()
-        available = emp_df[emp_df['Work Area'] == area].index.tolist()
-        if not available:
-            messagebox.showerror("Error", f"No employees found for {area} in {emp_file_path}")
-            return
-    except Exception as e:
-        messagebox.showerror("Error", f"Failed to load employee data from {emp_file_path}: {e}")
-        return
-    # Create dialog with standard look
-    dialog = tk.Toplevel()
-    dialog.title(f"Edit Employees - {area}")
-    dialog.geometry("350x450")
 
-    # Position dialog near cursor
-    root_window = tree.winfo_toplevel()
-    cursor_x = root_window.winfo_pointerx()
-    cursor_y = root_window.winfo_pointery()
-    
-    # Adjust position to keep dialog on screen
-    screen_width = dialog.winfo_screenwidth()
-    screen_height = dialog.winfo_screenheight()
-    dialog_width = 350
-    dialog_height = 450
-    x = min(cursor_x + 10, screen_width - dialog_width)
-    y = min(cursor_y + 10, screen_height - dialog_height)
-    x = max(0, x)
-    y = max(0, y)
-    dialog.geometry(f"{dialog_width}x{dialog_height}+{x}+{y}")
-    
-    # Set icon to match standard dialogs
-    try:
-        from main import resource_path  # Import from main.py
-        dialog.iconbitmap(resource_path(r'icons\teamwork.ico'))
-    except Exception as e:
-        # Fallback: use default
-        pass
-    
-    # Make dialog transient and modal
-    dialog.transient(root_window)
-    dialog.grab_set()
-    
-    # Add date and shift information
-    info_frame = tk.Frame(dialog)
-    info_frame.pack(pady=5)
-    tk.Label(info_frame, text=f"Shift: {shift_name}", font=("Arial", 10, "bold")).pack()
-    tk.Label(info_frame, text=f"Date: {col_name}", font=("Arial", 9)).pack()
-    tk.Label(dialog, text="Current Employees:").pack(pady=5)
-    lb = tk.Listbox(dialog, height=10)
-    for name in names:
-        lb.insert(tk.END, name)
-    lb.pack(pady=5, fill="both", expand=True)
-    def add_employee():
-        add_win = tk.Toplevel(dialog)
-        add_win.title("Add Employee")
-        add_win.geometry("250x200")
-        # Position add dialog relative to main dialog
-        dialog_x = dialog.winfo_x()
-        dialog_y = dialog.winfo_y()
-        add_win.geometry(f"250x200+{dialog_x + 50}+{dialog_y + 50}")
-        
-        # Set icon to match standard dialogs
+    # === 1. CREATE WHITE ENTRY BOX (LIKE INPUT EDITING) ===
+    cell_value = tree.set(item, col)
+    entry = tk.Entry(tree, background='white', foreground='black', relief='solid', bd=1)
+    entry.insert(0, cell_value if cell_value else "Click to edit...")
+    entry.config(state='readonly')  # Read-only until dialog opens
+
+    x, y, width, height = tree.bbox(item, col)
+    entry.place(x=x, y=y, width=width, height=height)
+    entry.focus_set()
+
+    # === 2. OPEN DIALOG AFTER ENTRY IS VISIBLE ===
+    def open_edit_dialog():
+        entry.config(state='normal')
+        entry.delete(0, tk.END)
+        entry.insert(0, cell_value)
+        entry.config(state='readonly')
+
+        col_name = tree.heading(col)['text']
+        shift_name = tree.set(item, tree["columns"][0])
+        names = [n.strip() for n in cell_value.split(',') if n.strip()]
+
         try:
-            from main import resource_path  # Import from main.py
-            add_win.iconbitmap(resource_path(r'icons\teamwork.ico'))
+            emp_df = pd.read_csv(emp_file_path, index_col="Employee/Input")
+            emp_df = emp_df.transpose()
+            available = emp_df[emp_df['Work Area'] == area].index.tolist()
+            if not available:
+                messagebox.showerror("Error", f"No employees for {area}")
+                entry.destroy()
+                return
         except Exception as e:
-            # Fallback: use default
+            messagebox.showerror("Error", f"Load failed: {e}")
+            entry.destroy()
+            return
+
+        # === DIALOG ===
+        dialog = tk.Toplevel()
+        dialog.title(f"Edit - {area}")
+        dialog.geometry("350x450")
+        dialog.transient(tree.winfo_toplevel())
+        dialog.grab_set()
+
+        # Position near cell
+        root_x = tree.winfo_rootx() + x
+        root_y = tree.winfo_rooty() + y
+        screen_w = dialog.winfo_screenwidth()
+        screen_h = dialog.winfo_screenheight()
+        dlg_w, dlg_h = 350, 450
+        pos_x = min(root_x + 20, screen_w - dlg_w)
+        pos_y = min(root_y + 20, screen_h - dlg_h)
+        dialog.geometry(f"{dlg_w}x{dlg_h}+{pos_x}+{pos_y}")
+
+        try:
+            from main import resource_path
+            dialog.iconbitmap(resource_path(r'icons\teamwork.ico'))
+        except:
             pass
-        
-        # Make dialog transient and modal
-        add_win.transient(dialog)
-        add_win.grab_set()
-        
-        info_frame = tk.Frame(add_win)
-        info_frame.pack(pady=5)
-        tk.Label(info_frame, text=f"Shift: {shift_name}", font=("Arial", 10, "bold")).pack()
-        tk.Label(info_frame, text=f"Date: {col_name}", font=("Arial", 9)).pack()
-        tk.Label(add_win, text="Select Employee:").pack(pady=5)
-        combo = ttk.Combobox(add_win, values=sorted([n for n in available if n not in names]))
-        combo.pack(pady=5)
-        def confirm_add():
-            new_name = combo.get()
-            if new_name:
-                if new_name not in names:
-                    names.append(new_name)
-                    lb.insert(tk.END, new_name)
+
+        # Info
+        info = tk.Frame(dialog)
+        info.pack(pady=5)
+        tk.Label(info, text=f"Shift: {shift_name}", font=("Arial", 10, "bold")).pack()
+        tk.Label(info, text=f"Date: {col_name}", font=("Arial", 9)).pack()
+        tk.Label(dialog, text="Current Employees:").pack(pady=5)
+
+        lb = tk.Listbox(dialog, height=10)
+        for n in names: lb.insert(tk.END, n)
+        lb.pack(pady=5, fill="both", expand=True)
+
+        def update_cell():
+            new_val = ", ".join(names)
+            tree.set(item, col, new_val)
+            entry.config(state='normal')
+            entry.delete(0, tk.END)
+            entry.insert(0, new_val if new_val else "")
+            entry.config(state='readonly')
+
+        def add_employee():
+            win = tk.Toplevel(dialog)
+            win.title("Add")
+            win.geometry("250x200")
+            win.transient(dialog)
+            win.grab_set()
+            win.geometry(f"+{dialog.winfo_x()+50}+{dialog.winfo_y()+50}")
+            try:
+                from main import resource_path
+                win.iconbitmap(resource_path(r'icons\teamwork.ico'))
+            except: pass
+
+            tk.Label(win, text="Select Employee:").pack(pady=5)
+            combo = ttk.Combobox(win, values=sorted([n for n in available if n not in names]))
+            combo.pack(pady=5)
+
+            def confirm():
+                name = combo.get()
+                if name and name not in names:
+                    names.append(name)
+                    lb.insert(tk.END, name)
                     update_cell()
-                    logging.info(f"Added {new_name} to {area} schedule cell ({item}, {col})")
-                else:
-                    messagebox.showwarning("Warning", f"{new_name} is already assigned to this shift.")
-            add_win.destroy()
-        button_frame = tk.Frame(add_win)
-        button_frame.pack(pady=10)
-        tk.Button(button_frame, text="Add", command=confirm_add).pack(side=tk.LEFT, padx=5)
-        tk.Button(button_frame, text="Cancel", command=add_win.destroy).pack(side=tk.LEFT, padx=5)
-    def delete_employee():
-        sel = lb.curselection()
-        if sel:
-            del_name = lb.get(sel[0])
-            if messagebox.askyesno("Confirm Delete", f"Delete {del_name}?"):
-                names.remove(del_name)
+                win.destroy()
+            tk.Button(win, text="Add", command=confirm).pack(side=tk.LEFT, padx=5, pady=10)
+            tk.Button(win, text="Cancel", command=win.destroy).pack(side=tk.LEFT, padx=5)
+
+        def delete_employee():
+            sel = lb.curselection()
+            if sel and messagebox.askyesno("Remove", f"Remove {lb.get(sel[0])}?"):
+                names.pop(sel[0])
                 lb.delete(sel[0])
                 update_cell()
-                logging.info(f"Removed {del_name} from {area} schedule cell ({item}, {col})")
-    def update_cell():
-        new_value = ", ".join(names)
-        tree.set(item, col, new_value)
-        logging.info(f"Updated {area} schedule cell ({item}, {col}) to '{new_value}'")
-    button_frame = tk.Frame(dialog)
-    button_frame.pack(pady=10)
-    tk.Button(button_frame, text="Add Employee", command=add_employee).pack(side=tk.LEFT, padx=5)
-    tk.Button(button_frame, text="Delete Employee", command=delete_employee).pack(side=tk.LEFT, padx=5)
-    tk.Button(button_frame, text="Close", command=dialog.destroy).pack(side=tk.LEFT, padx=5)
+
+        btns = tk.Frame(dialog)
+        btns.pack(pady=10)
+        tk.Button(btns, text="Add", command=add_employee).pack(side=tk.LEFT, padx=5)
+        tk.Button(btns, text="Delete", command=delete_employee).pack(side=tk.LEFT, padx=5)
+
+        def close():
+            update_cell()
+            entry.destroy()
+            dialog.destroy()
+
+        tk.Button(btns, text="Close", command=close).pack(side=tk.LEFT, padx=5)
+        dialog.protocol("WM_DELETE_WINDOW", close)
+
+    # === 3. DELAY DIALOG SO ENTRY IS VISIBLE ===
+    tree.after(50, open_edit_dialog)
 
 def save_schedule_changes(start_date, root, schedule_container, areas):
     """
@@ -492,7 +494,7 @@ def create_schedule_treeview(parent, week, start_date, shifts, actual_days):
 
     tree_frame = ttk.Frame(week_frame)
     tree_frame.pack(fill="both", expand=False)
-    tree = ttk.Treeview(tree_frame, show="headings", height=len(shifts))
+    tree = ttk.Treeview(tree_frame, show="headings", height=len(shifts), selectmode='none')
     vsb = ttk.Scrollbar(tree_frame, orient="vertical", command=tree.yview)
     hsb = ttk.Scrollbar(tree_frame, orient="horizontal", command=tree.xview)
     tree.configure(yscrollcommand=vsb.set, xscrollcommand=hsb.set)

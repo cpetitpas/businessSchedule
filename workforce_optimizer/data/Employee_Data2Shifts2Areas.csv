@@ -1,8 +1,8 @@
 Employee/Input,Richard Z,Daniel G,Frank T,James T,Nicole L,Ruth W,Anthony F,Joseph V,Debra D,Rachel E,Christopher R,Justin N,Melissa P,Ryan M,Linda F,Carol L
-Work Area,Bar,Bar,Kitchen,Kitchen,Kitchen,Kitchen,Bar,Bar,Kitchen,Kitchen,Kitchen,Bar,Bar,Kitchen,Kitchen,Kitchen
-Preferred Shift,Evening,Morning,Morning,Evening,Evening,Evening,Evening,Evening,Morning,Evening,Evening,Morning,Evening,Morning,Evening,Morning
+Work Area,Kitchen,Barista,Kitchen,Barista,Kitchen,Barista,Kitchen,Barista,Kitchen,Barista,Barista,Barista,Barista,Barista,Barista,Barista
+Preferred Shift,Evening,Morning,Evening,Morning,Evening,Morning,Evening,Morning,Evening,Morning,Evening,Morning,Evening,Morning,Evening,Morning
 Preferred Days,"Sat, Sun","Tue, Wed","Wed, Thu, Sat","Wed, Thu, Fri","Wed, Thu, Sat","Mon, Tue, Wed","Mon, Wed, Fri","Tue, Wed","Wed, Thu, Sat","Tue, Fri","Wed, Thu, Sat","Mon, Tue, Wed","Mon, Wed, Fri","Tue, Wed","Mon, Tue, Wed","Mon, Tue, Wed, Thu"
-Must have off,,,11/11/2025,,,,,,,,,,,,,"11/11/2025, 11/12/2025, 11/13/2025, 11/14/2025, 11/15/2025, 11/16/2025"
+Must have off,,,11/11/2025,,,,,,,,,,,,,"11/13/2025, 11/14/2025, 11/15/2025, 11/16/2025"
 Min Shifts per Week,1,2,2,2,2,2,2,3,2,2,2,2,2,2,2,2
 Max Shifts per Week,2,3,3,4,3,3,3,4,3,3,4,3,3,3,3,3
 Max Number of Weekend Days,1,1,1,1,1,2,1,2,1,1,1,1,1,2,1,1
