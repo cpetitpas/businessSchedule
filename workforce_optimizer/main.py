@@ -49,7 +49,6 @@ def install_sample_data():
 
         settings = _load_settings()
 
-        # If "data_dir" key exists (even if value == default_dir), user has explicitly set/changed it → never copy again
         if "data_dir" in settings:
             return
 
@@ -117,7 +116,7 @@ if __name__ == "__main__":
         sys.exit(0)
 
     # ------------------------------------------------------------------
-    # 1. Create the hidden root window (no geometry yet)
+    #  Create the hidden root window (no geometry yet)
     # ------------------------------------------------------------------
     root = tk.Tk()
     root.withdraw()                     # keep it off-screen for now
@@ -128,7 +127,7 @@ if __name__ == "__main__":
         pass
 
     # ------------------------------------------------------------------
-    # 2. Add the **Settings** menu **before** the splash
+    # Add the **Settings** menu **before** the splash
     # ------------------------------------------------------------------
     menubar = tk.Menu(root)
     root.config(menu=menubar)
@@ -158,7 +157,7 @@ if __name__ == "__main__":
 )
 
     # ------------------------------------------------------------------
-    # 3. Ultra-fast splash (shown while the heavy UI is built)
+    # 3. Splash (shown while the heavy UI is built)
     # ------------------------------------------------------------------
     splash = tk.Toplevel(root)
     splash.title("Loading...")
@@ -182,7 +181,7 @@ if __name__ == "__main__":
     root.update()                       # force splash to appear immediately
 
     # ------------------------------------------------------------------
-    # 4. DEFERRED heavy work (logging, sample data, UI build)
+    #  DEFERRED heavy work (logging, sample data, UI build)
     # ------------------------------------------------------------------
     # ---- logging ----------------------------------------------------
     from lib.utils import user_log_dir
@@ -212,7 +211,6 @@ if __name__ == "__main__":
     install_sample_data()
 
     # ---- build the *full* GUI (still hidden) ------------------------
-    # (All the code that was previously under “NOW BUILD GUI”)
     root.geometry("1200x800")
     root.minsize(1000, 600)
 
@@ -291,14 +289,12 @@ if __name__ == "__main__":
         date_weeks_frame = tk.Frame(scrollable_frame)
         date_weeks_frame.pack(pady=10)
         
-        # Left side: Date
         date_col = tk.Frame(date_weeks_frame)
         date_col.pack(side="left", padx=20)
         tk.Label(date_col, text="Select Start Date:").pack()
         start_date_entry = DateEntry(date_col, width=12, background='darkblue', foreground='white', borderwidth=2, year=2025, firstweekday='sunday')
         start_date_entry.pack(pady=5)
         
-        # Right side: Weeks
         weeks_col = tk.Frame(date_weeks_frame)
         weeks_col.pack(side="left", padx=20)
         tk.Label(weeks_col, text="Number of Weeks (1 or more):").pack()
@@ -398,13 +394,13 @@ if __name__ == "__main__":
     # ------------------------------------------------------------------
     setup_gui()
     # ------------------------------------------------------------------
-    # 4. Close splash and **show** the fully-built window
+    # Close splash and **show** the fully-built window
     # ------------------------------------------------------------------
     splash.destroy()
     root.deiconify()                     # now the UI appears
 
     # ------------------------------------------------------------------
-    # 5. Restore saved geometry (or centre on first run)
+    # Restore saved geometry (or centre on first run)
     # ------------------------------------------------------------------
     from lib.config import load_config
     config = load_config(root, emp_file_var, req_file_var, limits_file_var)
@@ -425,7 +421,7 @@ if __name__ == "__main__":
         root.geometry(f"{w}x{h}+{x}+{y}")
 
     # ------------------------------------------------------------------
-    # 6. Modal dialogs (Disclaimer → Trial)
+    #  Modal dialogs (Disclaimer → Trial)
     # ------------------------------------------------------------------
     def show_disclaimer(parent):
         text = (
@@ -525,7 +521,7 @@ if __name__ == "__main__":
     show_trial_dialog(root)
 
     # ------------------------------------------------------------------
-    # 7. Final UI wiring (bindings, column widths, etc.)
+    # Final UI wiring (bindings, column widths, etc.)
     # ------------------------------------------------------------------
     from lib.utils import adjust_column_widths, on_resize, on_mousewheel, user_data_dir
     from lib.config import on_closing
@@ -541,7 +537,7 @@ if __name__ == "__main__":
     logging.info("Application started")
 
     # ------------------------------------------------------------------
-    # 8. Event loop
+    # Event loop
     # ------------------------------------------------------------------
     try:
         root.mainloop()
