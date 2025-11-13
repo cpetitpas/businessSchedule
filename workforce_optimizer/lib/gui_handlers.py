@@ -346,7 +346,7 @@ def edit_schedule_cell(tree, event, area, emp_file_path):
         tk.Button(btns, text="Close", command=close).pack(side=tk.LEFT, padx=5)
         dialog.protocol("WM_DELETE_WINDOW", close)
 
-   tree.after(50, open_edit_dialog)
+        tree.after(50, open_edit_dialog)
 
 def save_schedule_changes(start_date, root, schedule_container, areas):
     """
@@ -420,7 +420,7 @@ def save_schedule_changes(start_date, root, schedule_container, areas):
                if isinstance(widget, tk.Label) and widget.cget("text") == f"{area} Schedule":
                     found_area_label = True
                     continue
-                if found_area_label and isinstance(widget, tk.Frame):
+               if found_area_label and isinstance(widget, tk.Frame):
                     for child in widget.winfo_children():
                         if isinstance(child, tk.Frame):
                             for grandchild in child.winfo_children():
