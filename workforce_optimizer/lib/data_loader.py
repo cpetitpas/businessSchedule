@@ -7,7 +7,7 @@ def load_csv(emp_file, req_file, limits_file, start_date, num_weeks_var):
     logging.debug("Entering load_csv with emp_file=%s, req_file=%s, limits_file=%s", emp_file, req_file, limits_file)
     invalid_dates = []
     try:
-        # === 1. Load Employee Data ===
+        # === Load Employee Data ===
         emp_df = pd.read_csv(emp_file, index_col=0)
         emp_df.index = emp_df.index.astype(str).str.strip().str.lower()
         logging.debug("Employee Data CSV loaded: %s", emp_df.to_string())
@@ -20,7 +20,7 @@ def load_csv(emp_file, req_file, limits_file, start_date, num_weeks_var):
             raise ValueError("No valid employee columns found in Employee_Data.csv")
         logging.debug("Employees: %s", employees)
 
-        # === 2. Load Hard Limits (to get Shifts & Work Areas) ===
+        # === Load Hard Limits (to get Shifts & Work Areas) ===
         limits_df = pd.read_csv(limits_file)
         logging.debug("Hard Limits CSV loaded: %s", limits_df.to_string())
         if limits_df.empty:
@@ -48,7 +48,7 @@ def load_csv(emp_file, req_file, limits_file, start_date, num_weeks_var):
             raise ValueError("No valid work areas found in Hard_Limits.csv")
         logging.debug("Work Areas: %s", areas)
 
-        # === 3. Employee Work Area Assignment (Hard Constraint) ===
+        # === Employee Work Area Assignment (Hard Constraint) ===
         work_areas = {}
         area_row = "work area"
         if area_row not in emp_df.index:
@@ -61,7 +61,7 @@ def load_csv(emp_file, req_file, limits_file, start_date, num_weeks_var):
                 raise ValueError(f"Invalid or missing work area for {emp}: '{area}' (valid: {areas})")
         logging.debug("Work areas: %s", work_areas)
 
-        # === 4. Shift Preferences ===
+        # === Shift Preferences ===
         shift_prefs = {}
         shift_row = "preferred shift"
         if shift_row not in emp_df.index:
@@ -77,7 +77,7 @@ def load_csv(emp_file, req_file, limits_file, start_date, num_weeks_var):
                     logging.warning("Invalid shift preference '%s' for %s", shift, emp)
         logging.debug("Shift preferences: %s", shift_prefs)
 
-        # === 5. Day Preferences ===
+        # === Day Preferences ===
         days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
         day_prefs = {}
         day_row = "preferred days"
@@ -94,7 +94,7 @@ def load_csv(emp_file, req_file, limits_file, start_date, num_weeks_var):
                     logging.warning("Failed to parse preferred days for %s: %s", emp, str(e))
             day_prefs[emp] = {d: 10 if d in preferred_days else 0 for d in days}
 
-        # === 6. Must-Off Dates ===
+        # === Must-Off Dates ===
         must_off = {}
         must_off_row = "must have off"
         if must_off_row in emp_df.index:
@@ -114,7 +114,7 @@ def load_csv(emp_file, req_file, limits_file, start_date, num_weeks_var):
         if invalid_dates:
             messagebox.showwarning("Invalid Dates", "Invalid must-off dates:\n" + "\n".join(invalid_dates))
 
-        # === 7. Min/Max Shifts per Week ===
+        # === Min/Max Shifts per Week ===
         def safe_int(val, default, name, emp):
             try:
                 return int(val)
@@ -143,7 +143,7 @@ def load_csv(emp_file, req_file, limits_file, start_date, num_weeks_var):
         for emp in employees:
             max_weekend_days[emp] = safe_int(emp_df.loc[weekend_row, emp], 2, "max weekend days", emp)
 
-        # === 8. Personnel Required (must have row per area) ===
+        # === Personnel Required (must have row per area) ===
         req_df = pd.read_csv(req_file, index_col=0)
         logging.debug("Personnel Required CSV loaded: %s", req_df.to_string())
 
@@ -162,7 +162,7 @@ def load_csv(emp_file, req_file, limits_file, start_date, num_weeks_var):
                     raise ValueError(f"Expected {len(shifts)} shift counts for {area} on {day}, got {len(counts)}")
                 required[day][area] = {shifts[i]: int(c.strip()) for i, c in enumerate(counts)}
 
-        # === 9. Constraints ===
+        # === Constraints ===
         constraints = {
             "max_shifts_per_day": 1,
             "violate_order": ["Preferred Days", "Preferred Shift", "Max Number of Weekend Days", "Min Shifts per Week"]
