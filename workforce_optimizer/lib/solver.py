@@ -19,19 +19,19 @@ def get_capacity_report(employees, work_areas, required, actual_days, shifts, ar
         2. Total max-shifts-per-week available per work area
         3. List of areas that are under-capacity (required > available)
     """
-    # 1. Required shifts (sum over all days & all shifts)
+    # Required shifts (sum over all days & all shifts)
     required_shifts = {
         a: sum(required[d][a][s] for d in actual_days for s in shifts)
         for a in areas
     }
 
-    # 2. Available capacity = Σ max_shifts per employee that can work the area
+    # Available capacity = Σ max_shifts per employee that can work the area
     available_capacity = defaultdict(int)
     for emp in employees:
         area = work_areas[emp][0]                     # one area per employee
         available_capacity[area] += max_shifts[emp]
 
-    # 3. Identify short-falls
+    # Identify short-falls
     shortfalls = {
         a: required_shifts[a] - available_capacity[a]
         for a in areas if required_shifts[a] > available_capacity[a]

@@ -226,7 +226,6 @@ def edit_schedule_cell(tree, event, area, emp_file_path):
     if col_idx == 0:  # Day/Shift
         return
 
-    # === 1. CREATE WHITE ENTRY BOX (LIKE INPUT EDITING) ===
     cell_value = tree.set(item, col)
     entry = tk.Entry(tree, background='white', foreground='black', relief='solid', bd=1)
     entry.insert(0, cell_value if cell_value else "Click to edit...")
@@ -236,7 +235,6 @@ def edit_schedule_cell(tree, event, area, emp_file_path):
     entry.place(x=x, y=y, width=width, height=height)
     entry.focus_set()
 
-    # === 2. OPEN DIALOG AFTER ENTRY IS VISIBLE ===
     def open_edit_dialog():
         entry.config(state='normal')
         entry.delete(0, tk.END)
@@ -348,7 +346,6 @@ def edit_schedule_cell(tree, event, area, emp_file_path):
         tk.Button(btns, text="Close", command=close).pack(side=tk.LEFT, padx=5)
         dialog.protocol("WM_DELETE_WINDOW", close)
 
-    # === 3. DELAY DIALOG SO ENTRY IS VISIBLE ===
     tree.after(50, open_edit_dialog)
 
 def save_schedule_changes(start_date, root, schedule_container, areas):
@@ -366,11 +363,11 @@ def save_schedule_changes(start_date, root, schedule_container, areas):
                 f"Cancel: Skip this file"
             )
             
-            if response is None:  # Cancel
+            if response is None:  
                 return False
-            elif response:  # Yes - overwrite
+            elif response:  
                 return default_path
-            else:  # No - save as
+            else:  
                 new_filename = filedialog.asksaveasfilename(
                     parent=root,
                     title=f"Save {file_type} As",
@@ -388,7 +385,6 @@ def save_schedule_changes(start_date, root, schedule_container, areas):
                         return
                     if not filename.lower().endswith(".csv"):
                         filename += ".csv"
-                    # If no directory specified, use user_output_dir
                     if not os.path.dirname(filename):
                         filename = os.path.join(user_output_dir(), filename)
                     choice[0] = filename
@@ -421,13 +417,10 @@ def save_schedule_changes(start_date, root, schedule_container, areas):
             # Look for area frames in schedule_container
             found_area_label = False
             for widget in schedule_container.winfo_children():
-                # Check if this is the label for our area
-                if isinstance(widget, tk.Label) and widget.cget("text") == f"{area} Schedule":
+               if isinstance(widget, tk.Label) and widget.cget("text") == f"{area} Schedule":
                     found_area_label = True
                     continue
-                # If we found the label, the next Frame contains this area's treeviews
-                if found_area_label and isinstance(widget, tk.Frame):
-                    # Find treeviews in this frame
+               if found_area_label and isinstance(widget, tk.Frame):
                     for child in widget.winfo_children():
                         if isinstance(child, tk.Frame):
                             for grandchild in child.winfo_children():
@@ -435,23 +428,18 @@ def save_schedule_changes(start_date, root, schedule_container, areas):
                                     for ggchild in grandchild.winfo_children():
                                         if isinstance(ggchild, ttk.Treeview):
                                             area_trees.append(ggchild)
-                    # Stop after processing this area's frame
                     found_area_label = False
                     break
             
             if area_trees:
-                # Determine number of weeks from number of trees
                 num_weeks = len(area_trees)
                 
-                # Default filename - ensure it's in user_output_dir
                 default_filename = os.path.join(user_output_dir(), f"{area}_schedule_{start_date:%Y-%m-%d}.csv")
                 
-                # Get filename with overwrite check
                 filename = get_save_filename(default_filename, f"{area} Schedule")
                 
-                if filename and filename is not False:  # filename is False when skipped
+                if filename and filename is not False:  
                     try:
-                        # Save with header for each week
                         with open(filename, "w") as f:
                             for week in range(1, num_weeks + 1):
                                 tree = area_trees[week-1]
@@ -548,9 +536,9 @@ def generate_schedule(emp_var, req_var, limits_var, start_date_entry, num_weeks_
         "Cancel: Cancel schedule generation"
     )
     
-    if response is None:  # Cancel
+    if response is None:  
         return
-    elif response:  # Yes - save input data
+    elif response:  
         try:
             save_input_data(emp_var, req_var, limits_var, emp_frame, req_frame, limits_frame, root)
         except Exception as e:
@@ -562,7 +550,7 @@ def generate_schedule(emp_var, req_var, limits_var, start_date_entry, num_weeks_
     req_path = req_var.get()
     limits_path = limits_var.get()
     all_listboxes = []
-    schedule_trees = {} # Global for save_schedule_changes
+    schedule_trees = {} 
     try:
         start_date = start_date_entry.get_date()
     except tk.TclError:
@@ -598,18 +586,14 @@ def generate_schedule(emp_var, req_var, limits_var, start_date_entry, num_weeks_
             error_msg = result_dict.get("error", "Unknown solver error.")
             messagebox.showerror("No Feasible Schedule", error_msg)
             logging.error(error_msg)
-            # === BUILD FAILURE REPORT ONCE — DO NOT INCLUDE capacity_report AGAIN ===
             min_emps, min_str, _ = min_employees_to_avoid_weekend_violations(
                 max_weekend_days, areas, [], work_areas, employees
             )
-            # ---- UI ----
             summary_text.delete(1.0, tk.END)
             report_lines = []
-            # ONLY the capacity_report (once)
             if capacity_report:
                 report_lines.append(capacity_report)
                 report_lines.append("")
-            # Add failure banner and **do not re-add** any part of error_msg that contains the report
             report_lines.extend([
                 "SOLVER FAILED TO FIND A FEASIBLE SCHEDULE",
                 "",
@@ -624,9 +608,7 @@ def generate_schedule(emp_var, req_var, limits_var, start_date_entry, num_weeks_
                     line.strip() for line in fixes_part.splitlines() if line.strip()
                 )
             report_lines.extend(["", min_str.strip()])
-            # Insert into UI
             summary_text.insert(tk.END, "\n".join(report_lines) + "\n")
-            # ---- FILE ----
             summary_file = os.path.join(user_output_dir(), f"Summary_report_{start_date:%Y-%m-%d}.csv")
             try:
                 with open(summary_file, "w", encoding="utf-8") as f:
@@ -642,7 +624,7 @@ def generate_schedule(emp_var, req_var, limits_var, start_date_entry, num_weeks_
             messagebox.showerror("Solver Error", f"Failed to find optimal solution: {status_msg}")
             logging.error("Solver status: %s", status_msg)
             return
-        # === SUCCESS PATH (unchanged below) ===
+        # === SUCCESS PATH  ===
         violations = result_dict.get("violations", [])
         violations_str = "Weekend constraint violations:\n" + ("\n".join(violations) if violations else "None")
         save_messages = []
@@ -681,13 +663,11 @@ def generate_schedule(emp_var, req_var, limits_var, start_date_entry, num_weeks_
         )
         violations_str = "Weekend constraint violations:\n" + ("\n".join(violations) if violations else "None")
         summary_text.delete(1.0, tk.END)
-        # 1. Capacity report first (only once)
         if capacity_report:
             summary_text.insert(tk.END, capacity_report + "\n\n")
-        # 2. Weekend info
         summary_text.insert(tk.END, violations_str + "\n\n")
         summary_text.insert(tk.END, min_str + "\n\n")
-        # 3. Employee shift summary
+        # Employee shift summary
         summary_text.insert(tk.END, "Employee Shift Summary:\n")
         summary_text.insert(tk.END, f"{'Employee':<20} {'Total':<8} {'Weeks':<20}\n")
         summary_text.insert(tk.END, "-" * 48 + "\n")

@@ -94,7 +94,6 @@ def show_settings_dialog(parent: tk.Tk):
         from main import resource_path # Import from main.py
         dlg.iconbitmap(resource_path(r'icons\teamwork.ico'))
     except Exception as e:
-        # Fallback: use default
         pass
     # current values
     cur_data_root = Path(user_data_dir())
@@ -150,7 +149,6 @@ def show_settings_dialog(parent: tk.Tk):
             return
         # write JSON
         _save_settings({"data_dir": str(new_data), "output_dir": str(new_output)})
-        # No need for subfolder creation since files are stored directly
         messagebox.showinfo("Settings saved",
                             "Folder locations updated.\n"
                             "The application will use the new paths from now on.",
@@ -158,7 +156,6 @@ def show_settings_dialog(parent: tk.Tk):
         dlg.destroy()
     ttk.Button(btn_frm, text="Apply", command=apply).pack(side="left", padx=5)
     ttk.Button(btn_frm, text="Cancel", command=dlg.destroy).pack(side="left", padx=5)
-    # centre on parent
     dlg.update_idletasks()
     x = parent.winfo_x() + (parent.winfo_width() // 2) - (dlg.winfo_width() // 2)
     y = parent.winfo_y() + (parent.winfo_height() // 2) - (dlg.winfo_height() // 2)
@@ -196,15 +193,15 @@ def min_employees_to_avoid_weekend_violations(
         violations (list of str)   # now always populated
     """
     # -------------------------------------------------
-    # 1. If we have a solved schedule to build violations from it
+    # If we have a solved schedule to build violations from it
     # -------------------------------------------------
     if not violations and result_dict and start_date and num_weeks:
         end_date = start_date + timedelta(days=7 * num_weeks - 1)
         # Build a list of **complete** Fri-Sat-Sun triplets that fall **entirely** inside the schedule
-        weekends = []  # each entry = [(week, day_idx), ...] for Fri-Sat-Sun
-        cur = start_date - timedelta(days=6)  # start far enough back to catch partial weeks
+        weekends = []  
+        cur = start_date - timedelta(days=6)  
         while cur <= end_date:
-            if cur.weekday() == 4:  # Friday
+            if cur.weekday() == 4:  
                 triplet = []
                 all_in_range = True
                 for d in range(3):
@@ -216,7 +213,6 @@ def min_employees_to_avoid_weekend_violations(
                     w = days_since // 7
                     k = days_since % 7
                     triplet.append((w, k))
-                # Only keep the triplet if **all three days** are in the schedule
                 if all_in_range and len(triplet) == 3:
                     weekends.append(triplet)
             cur += timedelta(days=1)
@@ -254,13 +250,12 @@ def min_employees_to_avoid_weekend_violations(
                     )
 
     # -------------------------------------------------
-    # 2. Compute required extra staff per area
+    # Compute required extra staff per area
     # -------------------------------------------------
     current_employees = {area: sum(1 for e in employees if area in work_areas[e]) for area in areas}
     required_employees = {area: current_employees[area] for area in areas}
     for v in violations:
         try:
-            # "Joe C has 3 weekend days (max 1) on Nov 01–Nov 03, 2025"
             emp_name = v.split(" has ")[0]
             count_str = v.split(" has ")[1].split(" weekend")[0]
             count = int(count_str)
@@ -277,7 +272,7 @@ def min_employees_to_avoid_weekend_violations(
             required_employees[emp_area] += excess
 
     # -------------------------------------------------
-    # 3. Build the human-readable summary
+    # Build the human-readable summary
     # -------------------------------------------------
     lines = ["Employee Summary (Current vs Required):"]
     for area in areas:

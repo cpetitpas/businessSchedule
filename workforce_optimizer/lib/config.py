@@ -23,11 +23,9 @@ def load_config(root, emp_file_var, req_file_var, limits_file_var):
                 logging.info("Loaded config.json: %s", config)
         except Exception as e:
             logging.warning("Failed to load config.json: %s", str(e))
-            print("Warning: Failed to load config.json, using empty paths and default geometry")
             root.geometry(default_geometry)
     else:
         logging.warning("config.json not found, using empty paths and default geometry")
-        print("Warning: config.json not found, using empty paths and default geometry")
         root.geometry(default_geometry)
     logging.debug("Exiting load_config")
 
@@ -45,7 +43,6 @@ def save_config(emp_file_var, req_file_var, limits_file_var, root):
         logging.info("Saved config.json: %s", config)
     except Exception as e:
         logging.warning("Failed to save config.json: %s", str(e))
-        print(f"Warning: Failed to save config.json ({str(e)})")
     logging.debug("Exiting save_config")
 
 def on_closing(emp_file_var, req_file_var, limits_file_var, root):
