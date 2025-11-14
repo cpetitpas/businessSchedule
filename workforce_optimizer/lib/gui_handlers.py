@@ -303,7 +303,7 @@ def edit_schedule_cell(tree, event, area, emp_file_path):
         def add_employee():
             win = tk.Toplevel(dialog)
             win.title("Add Employee")
-            win.geometry("300x280")  # Slightly taller
+            win.geometry("300x280")  
             win.transient(dialog)
             win.grab_set()
             win.geometry(f"+{dialog.winfo_x()+50}+{dialog.winfo_y()+50}")
@@ -323,7 +323,7 @@ def edit_schedule_cell(tree, event, area, emp_file_path):
             tk.Label(win, text="Select Employee:", font=("Arial", 10, "bold")).pack(pady=(10,5))
 
             # Filter Toggle
-            filter_var = tk.BooleanVar(value=True)  # True = filtered by area
+            filter_var = tk.BooleanVar(value=True)  
             def update_combo(*args):
                 show_filtered = filter_var.get()
                 if show_filtered:
@@ -347,7 +347,7 @@ def edit_schedule_cell(tree, event, area, emp_file_path):
 
             combo = ttk.Combobox(win, state="readonly", width=35)
             combo.pack(pady=8)
-            update_combo()  # Initial population
+            update_combo() 
 
             def confirm():
                 name = combo.get()
@@ -355,7 +355,6 @@ def edit_schedule_cell(tree, event, area, emp_file_path):
                     names.append(name)
                     lb.insert(tk.END, name)
                     update_cell()
-                    # Re-populate combo (in case we want to add same person elsewhere)
                     update_combo()
                 elif not name:
                     messagebox.showwarning("Warning", "Please select an employee.")
@@ -366,7 +365,6 @@ def edit_schedule_cell(tree, event, area, emp_file_path):
             tk.Button(btn_frame, text="Add", command=confirm, width=10).pack(side=tk.LEFT, padx=8)
             tk.Button(btn_frame, text="Cancel", command=win.destroy, width=10).pack(side=tk.LEFT, padx=8)
 
-            # Auto-focus combo
             win.after(100, lambda: combo.focus())
 
         def delete_employee():
