@@ -734,7 +734,7 @@ def generate_schedule(emp_var, req_var, limits_var, start_date_entry, num_weeks_
             summary_text.insert(tk.END, f"{e:<20} {int(total):<8} {weeks}\n")
         summary_text.insert(tk.END, f"\n{'Overall Total Shifts':<20} {total_shifts}\n")
         # === Save Summary Report to file ===
-        summary_file = os.path.join(user_output_dir(), f"Summary_report_{start_date:%Y-%m-%d}.csv")
+        summary_file = os.path.join(user_output_dir(), f"Summary_report_{start_date:%Y-%m-%d}.txt")
         try:
             file_lines = []
             if capacity_report:
