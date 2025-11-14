@@ -302,8 +302,8 @@ def edit_schedule_cell(tree, event, area, emp_file_path):
 
         def add_employee():
             win = tk.Toplevel(dialog)
-            win.title("Add")
-            win.geometry("250x200")
+            win.title("Add Employee")
+            win.geometry("300x280")  # Slightly taller
             win.transient(dialog)
             win.grab_set()
             win.geometry(f"+{dialog.winfo_x()+50}+{dialog.winfo_y()+50}")
@@ -312,9 +312,42 @@ def edit_schedule_cell(tree, event, area, emp_file_path):
                 win.iconbitmap(resource_path(r'icons\teamwork.ico'))
             except: pass
 
-            tk.Label(win, text="Select Employee:").pack(pady=5)
-            combo = ttk.Combobox(win, values=sorted([n for n in available if n not in names]))
-            combo.pack(pady=5)
+            # Load full employee list (for "All" mode)
+            try:
+                full_emp_df = pd.read_csv(emp_file_path, index_col="Employee/Input")
+                full_emp_df = full_emp_df.transpose()
+                all_employees = full_emp_df.index.tolist()
+            except:
+                all_employees = []
+
+            tk.Label(win, text="Select Employee:", font=("Arial", 10, "bold")).pack(pady=(10,5))
+
+            # Filter Toggle
+            filter_var = tk.BooleanVar(value=True)  # True = filtered by area
+            def update_combo(*args):
+                show_filtered = filter_var.get()
+                if show_filtered:
+                    current_list = sorted([n for n in available if n not in names])
+                else:
+                    current_list = sorted([n for n in all_employees if n not in names])
+                combo['values'] = current_list
+                if current_list and combo.get() not in current_list:
+                    combo.set('')
+
+            filter_frame = tk.Frame(win)
+            filter_frame.pack(pady=5)
+            chk = tk.Checkbutton(
+                filter_frame,
+                text=f"Only show {area} employees",
+                variable=filter_var,
+                command=update_combo,
+                font=("Arial", 9)
+            )
+            chk.pack()
+
+            combo = ttk.Combobox(win, state="readonly", width=35)
+            combo.pack(pady=8)
+            update_combo()  # Initial population
 
             def confirm():
                 name = combo.get()
@@ -322,9 +355,19 @@ def edit_schedule_cell(tree, event, area, emp_file_path):
                     names.append(name)
                     lb.insert(tk.END, name)
                     update_cell()
+                    # Re-populate combo (in case we want to add same person elsewhere)
+                    update_combo()
+                elif not name:
+                    messagebox.showwarning("Warning", "Please select an employee.")
                 win.destroy()
-            tk.Button(win, text="Add", command=confirm).pack(side=tk.LEFT, padx=5, pady=10)
-            tk.Button(win, text="Cancel", command=win.destroy).pack(side=tk.LEFT, padx=5)
+
+            btn_frame = tk.Frame(win)
+            btn_frame.pack(pady=15)
+            tk.Button(btn_frame, text="Add", command=confirm, width=10).pack(side=tk.LEFT, padx=8)
+            tk.Button(btn_frame, text="Cancel", command=win.destroy, width=10).pack(side=tk.LEFT, padx=8)
+
+            # Auto-focus combo
+            win.after(100, lambda: combo.focus())
 
         def delete_employee():
             sel = lb.curselection()
