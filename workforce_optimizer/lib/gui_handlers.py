@@ -231,7 +231,6 @@ def delete_employee(tree, item, name, root):
     if messagebox.askyesno("Delete Employee", f"Permanently delete employee:\n\n{name}\n\nThis cannot be undone."):
         tree.delete(item)
         messagebox.showinfo("Success", f"Employee '{name}' deleted.")
-        prompt_save_input(root)
 
 
 def add_employee(tree, item, before=True, root=None):
@@ -314,7 +313,6 @@ def choose_template(tree, ref_item, new_name, before, root):
 
         win.destroy()
         messagebox.showinfo("Success", f"Employee '{new_name}' added.")
-        prompt_save_input(root)
 
     def cancel():
         win.destroy()
@@ -361,66 +359,86 @@ def delete_employee_header(tree, column_id, name, root):
             tree.item(item, values=values)
 
     messagebox.showinfo("Success", f"Employee '{name}' deleted.")
-    prompt_save_input(root)
 
 
 def add_employee_header(tree, ref_column_id, before=True, root=None):
-    """Add new employee column before/after reference"""
-    name_win = tk.Toplevel(root)
-    name_win.title("New Employee Name")
-    name_win.geometry("400x120")
-    name_win.transient(root)
-    name_win.grab_set()
+    """Add new employee column — dialog perfectly centered on screen"""
+    dialog = tk.Toplevel(root)
+    dialog.title("Add New Employee")
+    dialog.geometry("480x260")
+    dialog.transient(root)
+    dialog.grab_set()
+    dialog.resizable(False, False)
 
-    tk.Label(name_win, text="Enter new employee name:", font=("Arial", 10)).pack(pady=10)
-    name_entry = tk.Entry(name_win, width=40, font=("Arial", 10))
-    name_entry.pack(pady=5)
+    # === PERFECT CENTER ON SCREEN (works on all monitors, all OS) ===
+    dialog.update_idletasks()  # Ensure size is calculated
+    screen_w = dialog.winfo_screenwidth()
+    screen_h = dialog.winfo_screenheight()
+    win_w = dialog.winfo_width()
+    win_h = dialog.winfo_height()
+    pos_x = (screen_w - win_w) // 2
+    pos_y = (screen_h - win_h) // 2
+    dialog.geometry(f"{win_w}x{win_h}+{pos_x}+{pos_y}")
+
+    # Current employees for copying
+    current_employees = tree["columns"][1:] if tree["columns"] and tree["columns"][0] in ["Employee/Input", ""] else tree["columns"]
+
+    tk.Label(dialog, text="New Employee Name:", font=("Arial", 10, "bold")).pack(pady=(15, 5), anchor="w", padx=20)
+    name_entry = tk.Entry(dialog, width=40, font=("Arial", 10))
+    name_entry.pack(pady=5, padx=20)
     name_entry.focus()
 
-    def proceed():
+    tk.Label(dialog, text="Copy settings from:", font=("Arial", 10)).pack(pady=(15, 5), anchor="w", padx=20)
+    template_var = tk.StringVar(value="(Blank - start fresh)")
+    combo = ttk.Combobox(dialog, textvariable=template_var, state="readonly", width=38)
+    combo["values"] = ["(Blank - start fresh)"] + sorted(current_employees)
+    combo.pack(pady=5, padx=20)
+
+    def confirm():
         new_name = name_entry.get().strip()
         if not new_name:
-            messagebox.showerror("Error", "Name cannot be empty.")
+            messagebox.showerror("Error", "Employee name cannot be empty!", parent=dialog)
             return
-        if new_name in tree["columns"]:
-            messagebox.showerror("Error", f"Employee '{new_name}' already exists.")
+        if new_name in current_employees:
+            messagebox.showerror("Error", f"Employee '{new_name}' already exists!", parent=dialog)
             return
-        name_win.destroy()
-        insert_employee_column(tree, ref_column_id, new_name, before, root)
+
+        template_name = template_var.get()
+        template_col = None if template_name == "(Blank - start fresh)" else template_name
+
+        dialog.destroy()
+        insert_employee_column(tree, ref_column_id, new_name, before, root, template_col)
 
     def cancel():
-        name_win.destroy()
+        dialog.destroy()
 
-    btns = tk.Frame(name_win)
-    btns.pack(pady=10)
-    tk.Button(btns, text="Next", command=proceed).pack(side=tk.LEFT, padx=10)
-    tk.Button(btns, text="Cancel", command=cancel).pack(side=tk.LEFT, padx=10)
+    btn_frame = tk.Frame(dialog)
+    btn_frame.pack(pady=20)
+    tk.Button(btn_frame, text="Add Employee", command=confirm, width=15, bg="#4CAF50", fg="white").pack(side=tk.LEFT, padx=10)
+    tk.Button(btn_frame, text="Cancel", command=cancel, width=10).pack(side=tk.LEFT, padx=10)
 
-    name_win.bind("<Return>", lambda e: proceed())
-    name_win.bind("<Escape>", lambda e: cancel())
+    dialog.bind("<Return>", lambda e: confirm())
+    dialog.bind("<Escape>", lambda e: cancel())
 
 
-def insert_employee_column(tree, ref_column_id, new_name, before, root):
-    """Insert new employee column — FULLY WORKING"""
+def insert_employee_column(tree, ref_column_id, new_name, before, root, template_col=None):
+    """Insert new column with optional data copy from template employee"""
     current_cols = list(tree["columns"])
     
-    # Save current heading texts
+    # Save heading texts
     heading_texts = {}
     for col in current_cols:
         heading_texts[col] = tree.heading(col)["text"]
 
     # Find insert position
-    if ref_column_id not in current_cols:
-        insert_idx = len(current_cols)
-    else:
-        ref_idx = current_cols.index(ref_column_id)
-        insert_idx = ref_idx if before else ref_idx + 1
+    ref_idx = current_cols.index(ref_column_id) if ref_column_id in current_cols else len(current_cols)
+    insert_idx = ref_idx if before else ref_idx + 1
 
-    # Insert new column ID
+    # Insert new column
     current_cols.insert(insert_idx, new_name)
     tree["columns"] = current_cols
 
-    # === RESTORE ALL HEADINGS + ADD NEW ONE ===
+    # Restore + add new heading
     for col in current_cols:
         if col == new_name:
             tree.heading(col, text=new_name)
@@ -429,28 +447,23 @@ def insert_employee_column(tree, ref_column_id, new_name, before, root):
             tree.heading(col, text=heading_texts[col])
             tree.column(col, anchor="center", width=100)
 
-    # Insert blank cells
+    # Insert data into all rows
     for item in tree.get_children():
         values = list(tree.item(item, "values"))
-        values.insert(insert_idx, "")
+        if template_col and template_col in tree["columns"]:
+            # Copy data from template column
+            template_idx = tree["columns"].index(template_col)
+            if template_idx < len(values):
+                new_value = values[template_idx]
+            else:
+                new_value = ""
+        else:
+            new_value = ""
+        values.insert(insert_idx, new_value)
         tree.item(item, values=values)
 
-    messagebox.showinfo("Success", f"Employee '{new_name}' added.")
-    prompt_save_input(root)
-
-
-def prompt_save_input(root):
-    """
-    Gently remind user to save after structural changes
-    """
-    if messagebox.askyesno("Save Changes?", "You've modified the Employee Data.\n\nSave now?"):
-        # Find the save button or trigger save
-        # We'll assume there's a save function accessible
-        try:
-            # This will work if you have a save button bound to save_input_data
-            root.event_generate("<<SaveInputData>>")
-        except:
-            messagebox.showinfo("Reminder", "Don't forget to click 'Save Input Data' when done!")
+    messagebox.showinfo("Success", f"Employee '{new_name}' added successfully!")
+    
 
 def on_tree_double_click(tree, event, has_index):
     """
