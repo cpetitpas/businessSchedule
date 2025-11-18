@@ -236,24 +236,44 @@ def min_employees_to_avoid_weekend_violations(
 
         # Detect violations
         violations = []
+        excess_days = {}  # e → excess weekend days (for required employee calculation)
+
         for e in employees:
             max_d = max_weekend_days.get(e, 2)
+            total_violated_days = 0
+
             for weekend in weekends:
                 count = sum(worked[e][w][k] for w, k in weekend)
                 if count > max_d:
-                    # Build human-readable date range for this weekend
+                    total_violated_days += (count - max_d)
+
+                    # Human-readable date range (optional, for debugging)
                     fri_date = start_date + timedelta(days=weekend[0][0]*7 + weekend[0][1])
                     sun_date = start_date + timedelta(days=weekend[2][0]*7 + weekend[2][1])
                     date_range = f"{fri_date:%b %d}–{sun_date:%b %d}, {fri_date.year}"
+
+                    # GET EMPLOYEE'S WORK AREA (exactly one)
+                    emp_area = work_areas.get(e, [None])[0]
+                    if emp_area is None:
+                        emp_area = "Unknown"
+
                     violations.append(
-                        f"{e} has {count} weekend days (max {max_d}) on {date_range}"
+                        f"{e} violated Max Number of Weekend Days "
+                        f"(worked {count}, max {max_d}) on {date_range} → {emp_area}"
                     )
+
+            if total_violated_days > 0:
+                excess_days[e] = total_violated_days
 
     # -------------------------------------------------
     # Compute required extra staff per area
     # -------------------------------------------------
     current_employees = {area: sum(1 for e in employees if area in work_areas[e]) for area in areas}
     required_employees = {area: current_employees[area] for area in areas}
+    for e, excess in excess_days.items():
+        emp_area = work_areas.get(e, [None])[0]
+        if emp_area in required_employees:
+            required_employees[emp_area] += excess
     for v in violations:
         try:
             emp_name = v.split(" has ")[0]
