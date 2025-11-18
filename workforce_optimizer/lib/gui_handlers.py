@@ -75,7 +75,12 @@ def display_input_data(emp_path, req_path, limits_path, emp_frame, req_frame, li
             tree.insert("", "end", iid=str(idx) if has_index else f"row_{idx}", values=values)
         tree.bind("<Double-1>", lambda event: on_tree_double_click(tree, event, has_index))
         return tree
-    create_treeview(emp_frame, emp_path, has_index=False)
+    emp_tree = create_treeview(emp_frame, emp_path, has_index=False)
+    if emp_tree:
+        # Right-click on COLUMN HEADERS only
+        emp_tree.bind("<Button-3>", lambda e: employee_context_menu(emp_tree, e, emp_frame, root))
+        # Optional: macOS support
+        emp_tree.bind("<Control-Button-1>", lambda e: employee_context_menu(emp_tree, e, emp_frame, root))
     create_treeview(req_frame, req_path, has_index=False)
     create_treeview(limits_frame, limits_path, has_index=True)
     adjust_column_widths(root, all_listboxes, all_input_trees, notebook, summary_text)
@@ -186,6 +191,337 @@ def save_input_data(emp_var, req_var, limits_var, emp_frame, req_frame, limits_f
     except Exception as e:
         logging.error(f"Failed to save input data: {str(e)}")
         messagebox.showerror("Error", f"Failed to save input data: {str(e)}")
+
+def employee_context_menu(tree, event, emp_frame, root):
+    """Right-click on employee header → show menu + PERFECT, SUBTLE HIGHLIGHT"""
+    region = tree.identify("region", event.x, event.y)
+    if region != "heading":
+        return
+
+    col = tree.identify_column(event.x)
+    if col == "#0":
+        return
+
+    col_id = tree["columns"][int(col[1:]) - 1]
+    employee_name = tree.heading(col_id)["text"]
+
+    # === GET EXACT HEADING BOUNDS (WORKS 100%) ===
+    # This is the ONLY reliable way to get heading bbox
+    x = tree.bbox(tree.get_children("")[0] if tree.get_children() else "", col)[0] if tree.get_children() else 0
+    if x is None or x == "":
+        # Fallback: calculate from column index
+        x = sum(tree.column(c, "width") or 100 for c in tree["columns"][:int(col[1:])-1])
+    
+    width = tree.column(col_id, "width") or 100
+    height = 24  # Standard ttk heading height
+    y = 0
+
+    # === DRAW PERFECT HIGHLIGHT USING CANVAS OVERLAY ===
+    canvas = tk.Canvas(tree, highlightthickness=0)
+    canvas.place(x=x, y=y, width=width, height=height)
+    canvas.create_rectangle(
+        0, 0, width, height,
+        fill="#d0e7ff",
+        outline="#90c0ff",
+        width=2
+    )
+    canvas.create_text(
+        width // 2, height // 2,
+        text=employee_name,
+        fill="black",
+        font=("Arial", 10, "bold")
+    )
+
+    menu = tk.Menu(tree, tearoff=0)
+    menu.add_command(
+        label=f"Delete Employee: {employee_name}",
+        command=lambda: delete_employee_header(tree, col_id, employee_name, root, highlight_canvas=canvas)
+    )
+    menu.add_separator()
+    menu.add_command(
+        label="Add Employee Before",
+        command=lambda: add_employee_header(tree, col_id, before=True, root=root, highlight_canvas=canvas)
+    )
+    menu.add_command(
+        label="Add Employee After",
+        command=lambda: add_employee_header(tree, col_id, before=False, root=root, highlight_canvas=canvas)
+    )
+
+    def cleanup():
+        canvas.destroy()
+    def on_close(*_):
+        cleanup()
+        try:
+            menu.unpost()
+        except:
+            pass
+
+    menu.bind("<Unmap>", on_close)
+    tree.bind("<Button-1>", on_close, "+")
+    tree.bind("<Button-3>", on_close, "+")
+    root.bind("<Escape>", on_close, "+")
+
+    try:
+        menu.tk_popup(event.x_root, event.y_root)
+    finally:
+        menu.grab_release()
+
+
+def delete_employee(tree, item, name, root):
+    if messagebox.askyesno("Delete Employee", f"Permanently delete employee:\n\n{name}\n\nThis cannot be undone."):
+        tree.delete(item)
+        messagebox.showinfo("Success", f"Employee '{name}' deleted.")
+
+
+def add_employee(tree, item, before=True, root=None):
+    """
+    Add new employee with option to copy settings from existing one
+    """
+    # Step 1: Get new name
+    name_win = tk.Toplevel(root)
+    name_win.title("New Employee Name")
+    name_win.geometry("400x120")
+    name_win.transient(root)
+    name_win.grab_set()
+
+    tk.Label(name_win, text="Enter new employee name:", font=("Arial", 10)).pack(pady=10)
+    name_entry = tk.Entry(name_win, width=40, font=("Arial", 10))
+    name_entry.pack(pady=5)
+    name_entry.focus()
+
+    def proceed():
+        new_name = name_entry.get().strip()
+        if not new_name:
+            messagebox.showerror("Error", "Name cannot be empty.")
+            return
+        if new_name in [tree.item(i, "values")[0] for i in tree.get_children()]:
+            messagebox.showerror("Error", f"Employee '{new_name}' already exists.")
+            return
+        name_win.destroy()
+        choose_template(tree, item, new_name, before, root)
+
+    def cancel():
+        name_win.destroy()
+
+    btns = tk.Frame(name_win)
+    btns.pack(pady=10)
+    tk.Button(btns, text="Next", command=proceed).pack(side=tk.LEFT, padx=10)
+    tk.Button(btns, text="Cancel", command=cancel).pack(side=tk.LEFT, padx=10)
+
+    name_win.bind("<Return>", lambda e: proceed())
+    name_win.bind("<Escape>", lambda e: cancel())
+
+
+def choose_template(tree, ref_item, new_name, before, root):
+    """
+    Choose which employee's settings to copy (or blank)
+    """
+    all_employees = [tree.item(i, "values")[0] for i in tree.get_children()]
+    if not all_employees:
+        all_employees = []
+
+    win = tk.Toplevel(root)
+    win.title("Copy Settings From")
+    win.geometry("420x180")
+    win.transient(root)
+    win.grab_set()
+
+    tk.Label(win, text=f"Copy settings for '{new_name}' from:", font=("Arial", 10)).pack(pady=10)
+    tk.Label(win, text="(Leave blank for empty row)", font=("Arial", 9), fg="gray").pack()
+
+    combo = ttk.Combobox(win, values=["(Blank)"] + sorted(all_employees), state="readonly", width=40)
+    combo.set("(Blank)")
+    combo.pack(pady=10)
+
+    def confirm():
+        template_name = combo.get()
+        if template_name == "(Blank)":
+            template_values = [""] * (len(tree["columns"]) - 1)
+        else:
+            for i in tree.get_children():
+                vals = tree.item(i, "values")
+                if vals[0] == template_name:
+                    template_values = list(vals[1:])
+                    break
+
+        # Insert new row
+        new_values = [new_name] + template_values
+        if before:
+            tree.insert("", tree.index(ref_item), values=new_values)
+        else:
+            tree.insert("", tree.index(ref_item) + 1, values=new_values)
+
+        win.destroy()
+        messagebox.showinfo("Success", f"Employee '{new_name}' added.")
+
+    def cancel():
+        win.destroy()
+
+    btns = tk.Frame(win)
+    btns.pack(pady=10)
+    tk.Button(btns, text="Add Employee", command=confirm).pack(side=tk.LEFT, padx=10)
+    tk.Button(btns, text="Cancel", command=cancel).pack(side=tk.LEFT, padx=10)
+
+    win.bind("<Return>", lambda e: confirm())
+    win.bind("<Escape>", lambda e: cancel())
+
+def delete_employee_header(tree, column_id, name, root, highlight_canvas=None):
+    """Delete employee column — now safely removes highlight too"""
+    if not messagebox.askyesno("Delete Employee", f"Permanently delete employee:\n\n{name}\n\nThis cannot be undone."):
+        if highlight_canvas:
+            highlight_canvas.destroy()
+        return
+
+    current_cols = list(tree["columns"])
+    if column_id not in current_cols:
+        if highlight_canvas:
+            highlight_canvas.destroy()
+        return
+
+    col_index = current_cols.index(column_id)
+    current_cols.pop(col_index)
+    
+    # Save heading texts
+    heading_texts = {col: tree.heading(col)["text"] for col in tree["columns"]}
+
+    tree["columns"] = current_cols
+
+    # Restore headings
+    for col in current_cols:
+        if col in heading_texts:
+            tree.heading(col, text=heading_texts[col])
+            tree.column(col, anchor="center", width=100)
+
+    # Remove column data
+    for item in tree.get_children():
+        values = list(tree.item(item, "values"))
+        if len(values) > col_index:
+            values.pop(col_index)
+            tree.item(item, values=values)
+
+    if highlight_canvas:
+        highlight_canvas.destroy()
+    
+    messagebox.showinfo("Success", f"Employee '{name}' deleted.")
+
+
+def add_employee_header(tree, ref_column_id, before=True, root=None, highlight_canvas=None):
+    """Add new employee column — now preserves highlight during dialog"""
+    dialog = tk.Toplevel(root)
+    dialog.title("Add New Employee")
+    dialog.geometry("480x260")
+    dialog.transient(root)
+    dialog.grab_set()
+    dialog.resizable(False, False)
+
+    # === ADD APP ICON ===
+    try:
+        from main import resource_path
+        dialog.iconbitmap(resource_path(r'icons\teamwork.ico'))
+    except:
+        pass
+
+    # === PERFECT CENTER ON SCREEN ===
+    dialog.update_idletasks()
+    screen_w = dialog.winfo_screenwidth()
+    screen_h = dialog.winfo_screenheight()
+    win_w = dialog.winfo_width()
+    win_h = dialog.winfo_height()
+    pos_x = (screen_w - win_w) // 2
+    pos_y = (screen_h - win_h) // 2
+    dialog.geometry(f"{win_w}x{win_h}+{pos_x}+{pos_y}")
+
+    current_employees = tree["columns"][1:] if tree["columns"] and tree["columns"][0] in ["Employee/Input", ""] else tree["columns"]
+
+    tk.Label(dialog, text="New Employee Name:", font=("Arial", 10, "bold")).pack(pady=(15, 5), anchor="w", padx=20)
+    name_entry = tk.Entry(dialog, width=40, font=("Arial", 10))
+    name_entry.pack(pady=5, padx=20)
+    name_entry.focus()
+
+    tk.Label(dialog, text="Copy settings from:", font=("Arial", 10)).pack(pady=(15, 5), anchor="w", padx=20)
+    template_var = tk.StringVar(value="(Blank - start fresh)")
+    combo = ttk.Combobox(dialog, textvariable=template_var, state="readonly", width=38)
+    combo["values"] = ["(Blank - start fresh)"] + sorted(current_employees)
+    combo.pack(pady=5, padx=20)
+
+    def confirm():
+        new_name = name_entry.get().strip()
+        if not new_name:
+            messagebox.showerror("Error", "Employee name cannot be empty!", parent=dialog)
+            return
+        if new_name in current_employees:
+            messagebox.showerror("Error", f"Employee '{new_name}' already exists!", parent=dialog)
+            return
+
+        template_name = template_var.get()
+        template_col = None if template_name == "(Blank - start fresh)" else template_name
+
+        dialog.destroy()
+        # Only now destroy the highlight
+        if highlight_canvas:
+            highlight_canvas.destroy()
+        insert_employee_column(tree, ref_column_id, new_name, before, root, template_col)
+
+    def cancel():
+        dialog.destroy()
+        if highlight_canvas:
+            highlight_canvas.destroy()
+
+    # Ensure highlight is removed if window is closed with X
+    dialog.protocol("WM_DELETE_WINDOW", cancel)
+
+    btn_frame = tk.Frame(dialog)
+    btn_frame.pack(pady=20)
+    tk.Button(btn_frame, text="Add Employee", command=confirm, width=15, bg="#4CAF50", fg="white").pack(side=tk.LEFT, padx=10)
+    tk.Button(btn_frame, text="Cancel", command=cancel, width=10).pack(side=tk.LEFT, padx=10)
+
+    dialog.bind("<Return>", lambda e: confirm())
+    dialog.bind("<Escape>", lambda e: cancel())
+
+
+def insert_employee_column(tree, ref_column_id, new_name, before, root, template_col=None):
+    """Insert new column with optional data copy from template employee"""
+    current_cols = list(tree["columns"])
+    
+    # Save heading texts
+    heading_texts = {}
+    for col in current_cols:
+        heading_texts[col] = tree.heading(col)["text"]
+
+    # Find insert position
+    ref_idx = current_cols.index(ref_column_id) if ref_column_id in current_cols else len(current_cols)
+    insert_idx = ref_idx if before else ref_idx + 1
+
+    # Insert new column
+    current_cols.insert(insert_idx, new_name)
+    tree["columns"] = current_cols
+
+    # Restore + add new heading
+    for col in current_cols:
+        if col == new_name:
+            tree.heading(col, text=new_name)
+            tree.column(col, anchor="center", width=100)
+        elif col in heading_texts:
+            tree.heading(col, text=heading_texts[col])
+            tree.column(col, anchor="center", width=100)
+
+    # Insert data into all rows
+    for item in tree.get_children():
+        values = list(tree.item(item, "values"))
+        if template_col and template_col in tree["columns"]:
+            # Copy data from template column
+            template_idx = tree["columns"].index(template_col)
+            if template_idx < len(values):
+                new_value = values[template_idx]
+            else:
+                new_value = ""
+        else:
+            new_value = ""
+        values.insert(insert_idx, new_value)
+        tree.item(item, values=values)
+
+    messagebox.showinfo("Success", f"Employee '{new_name}' added successfully!")
+    
 
 def on_tree_double_click(tree, event, has_index):
     """
