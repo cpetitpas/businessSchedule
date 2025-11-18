@@ -8,7 +8,7 @@ A scheduling and workforce management solution for optimizing business operation
 - Resource allocation management
 - Shift planning tools
 
-## Build
+## Build .exe
 
 pyinstaller main.spec --clean
 
