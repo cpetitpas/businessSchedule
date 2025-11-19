@@ -15,7 +15,8 @@ def load_csv(emp_file, req_file, limits_file, start_date, num_weeks_var):
         if emp_df.index.isna().any() or "" in emp_df.index:
             raise ValueError("Employee_Data.csv has invalid or missing index values")
 
-        employees = [col for col in emp_df.columns if pd.notna(col) and isinstance(col, str) and col.strip()]
+        raw_cols = [col for col in emp_df.columns if pd.notna(col) and isinstance(col, str) and str(col).strip()]
+        employees = sorted(raw_cols, key=lambda x: str(x).strip().lower())
         if not employees:
             raise ValueError("No valid employee columns found in Employee_Data.csv")
         logging.debug("Employees: %s", employees)
