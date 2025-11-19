@@ -157,8 +157,7 @@ def add_constraints(
                 prob += pulp.lpSum(x[e][w][k][s][a]
                     for s in shifts
                     for a in work_areas[e]
-                    if isinstance(x[e][w][k][s][a], pulp.LpVariable) <= constraints["max_shifts_per_day"]
-                )
+                    if isinstance(x[e][w][k][s][a], pulp.LpVariable)) <= constraints["max_shifts_per_day"]
 
     # Max shifts per week
     for e in x:
