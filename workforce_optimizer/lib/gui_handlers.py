@@ -22,6 +22,89 @@ logging.getLogger('PIL').setLevel(logging.WARNING)
 all_input_trees = []
 all_listboxes = []
 
+def sort_employee_columns_by_row(tree, row_label, ascending=True):
+    """Correctly sort employee columns — respects that first row contains column names"""
+    # Find the target row (the one we're sorting by)
+    target_iid = None
+    target_values = None
+    for iid in tree.get_children():
+        vals = tree.item(iid, "values")
+        if vals and len(vals) > 0 and str(vals[0]).strip() == row_label.strip():
+            target_iid = iid
+            target_values = vals
+            break
+
+    if not target_values or len(target_values) < 2:
+        messagebox.showwarning("Sort Error", f"Row '{row_label}' not found.")
+        return
+
+    columns = list(tree["columns"])
+    # Skip first column (row headers) - only sort employee columns
+    first_col = columns[0]
+    employee_columns = columns[1:]
+    n = len(employee_columns)
+
+    # Build sort keys using the target row (skip first column)
+    sort_items = []
+    for i, col in enumerate(employee_columns):
+        cell_idx = i + 1  # +1 because values[0] is the row label
+        raw = target_values[cell_idx] if cell_idx < len(target_values) else ""
+        raw_str = str(raw).strip()
+
+        if not raw_str or raw_str.lower() in {"", "nan", "none"}:
+            key = (3, "")
+        elif row_label.lower() == "must have off":
+            count = len([d.strip() for d in raw_str.split(",") if d.strip()])
+            key = (0, -count if not ascending else count)
+        else:
+            try:
+                key = (0, float(raw_str))
+            except:
+                try:
+                    from datetime import datetime
+                    dt = datetime.strptime(raw_str.split(",")[0].strip(), "%m/%d/%Y")
+                    key = (1, dt if ascending else datetime(9999,12,31) - dt)
+                except:
+                    key = (2, raw_str.lower())
+
+        sort_items.append((key, i, col))
+
+    # Sort
+    sort_items.sort(reverse=not ascending)
+    new_employee_order = [item[2] for item in sort_items]
+    old_to_new_index = {old_idx: new_idx for new_idx, (_, old_idx, _) in enumerate(sort_items)}
+
+    # Update column order - keep first column in place
+    tree["columns"] = [first_col] + new_employee_order
+
+    # Reorder EVERY row's employee data (values[1:])
+    for iid in tree.get_children():
+        old_vals = list(tree.item(iid, "values"))
+        if len(old_vals) < 2:
+            continue
+
+        row_label_cell = old_vals[0]
+        old_employee_data = old_vals[1:1+n]  # exactly n employee cells
+
+        # Rebuild in new order
+        new_employee_data = [""] * n
+        for old_idx, cell_value in enumerate(old_employee_data):
+            if old_idx < n:
+                new_idx = old_to_new_index[old_idx]
+                new_employee_data[new_idx] = cell_value
+
+        tree.item(iid, values=[row_label_cell] + new_employee_data)
+
+    # Update headings to match new order - restore first column heading
+    tree.heading(first_col, text=first_col)
+    tree.column(first_col, anchor="w", width=100)
+    for col in new_employee_order:
+        tree.heading(col, text=col)
+        tree.column(col, anchor="center", width=100)
+
+    direction = "Ascending" if ascending else "Descending"
+    messagebox.showinfo("Sorted", f"Employees sorted by: {row_label}\n({direction})")
+
 def display_input_data(emp_path, req_path, limits_path, emp_frame, req_frame, limits_frame, root, notebook, summary_text):
     """
     Load CSV files into Treeview widgets for all input tabs (Employee Data, Personnel Required, Hard Limits).
@@ -77,10 +160,49 @@ def display_input_data(emp_path, req_path, limits_path, emp_frame, req_frame, li
         return tree
     emp_tree = create_treeview(emp_frame, emp_path, has_index=False)
     if emp_tree:
-        # Right-click on COLUMN HEADERS only
-        emp_tree.bind("<Button-3>", lambda e: employee_context_menu(emp_tree, e, emp_frame, root))
-        # Optional: macOS support
-        emp_tree.bind("<Control-Button-1>", lambda e: employee_context_menu(emp_tree, e, emp_frame, root))
+        def handle_emp_right_click(event):
+            region = emp_tree.identify("region", event.x, event.y)
+            col = emp_tree.identify_column(event.x)
+
+            # Employee header (top) → Add/Delete menu
+            if region == "heading" and col != "#0":
+                employee_context_menu(emp_tree, event, emp_frame, root)
+                return
+
+            # Row label column → Sort menu
+            if col == "#1":
+                item = emp_tree.identify_row(event.y)
+                if not item:
+                    return
+                values = emp_tree.item(item, "values")
+                if not values:
+                    return
+                row_label = values[0].strip()
+                if not row_label:
+                    return
+
+                menu = tk.Menu(emp_tree, tearoff=0)
+                sort_menu = tk.Menu(menu, tearoff=0)
+                menu.add_cascade(label=f"Sort employees by: {row_label}", menu=sort_menu)
+                sort_menu.add_command(
+                    label="Ascending (A → Z, 0 → 9)",
+                    command=lambda: sort_employee_columns_by_row(emp_tree, row_label, ascending=True)
+                )
+                sort_menu.add_command(
+                    label="Descending (Z → A, 9 → 0)",
+                    command=lambda: sort_employee_columns_by_row(emp_tree, row_label, ascending=False)
+                )
+                menu.add_separator()
+                menu.add_command(label="Cancel", command=menu.unpost)
+
+                try:
+                    menu.tk_popup(event.x_root, event.y_root)
+                finally:
+                    menu.grab_release()
+
+        # Replace old binding
+        emp_tree.bind("<Button-3>", handle_emp_right_click)
+        emp_tree.bind("<Control-Button-1>", handle_emp_right_click)
     create_treeview(req_frame, req_path, has_index=False)
     create_treeview(limits_frame, limits_path, has_index=True)
     adjust_column_widths(root, all_listboxes, all_input_trees, notebook, summary_text)
@@ -199,7 +321,7 @@ def employee_context_menu(tree, event, emp_frame, root):
         return
 
     col = tree.identify_column(event.x)
-    if col == "#0":
+    if col == "#1":
         return
 
     col_id = tree["columns"][int(col[1:]) - 1]
