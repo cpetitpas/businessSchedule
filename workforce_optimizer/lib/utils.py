@@ -270,26 +270,26 @@ def min_employees_to_avoid_weekend_violations(
     # -------------------------------------------------
     current_employees = {area: sum(1 for e in employees if area in work_areas[e]) for area in areas}
     required_employees = {area: current_employees[area] for area in areas}
-    for e, excess in excess_days.items():
-        emp_area = work_areas.get(e, [None])[0]
-        if emp_area in required_employees:
-            required_employees[emp_area] += excess
+    
+    # Count unique employees per area from violations
+    employees_with_violations_per_area = {area: set() for area in areas}
+    
     for v in violations:
+        # Extract employee name from violation string
+        # Format: "Employee violated ... → Area"
         try:
-            emp_name = v.split(" has ")[0]
-            count_str = v.split(" has ")[1].split(" weekend")[0]
-            count = int(count_str)
-            max_d = max_weekend_days.get(emp_name, 2)
+            emp_name = v.split(" violated ")[0]
+            emp_area = v.split(" → ")[-1].strip()
+            
+            if emp_area in employees_with_violations_per_area:
+                employees_with_violations_per_area[emp_area].add(emp_name)
         except Exception:
             logging.warning(f"Could not parse violation string: {v}")
             continue
-        excess = count - max_d
-        if excess <= 0:
-            continue
-        # Employee works in exactly one area
-        emp_area = next((a for a in work_areas[emp_name] if a in areas), None)
-        if emp_area:
-            required_employees[emp_area] += excess
+    
+    # Add one additional employee per area for each unique employee with violations
+    for area in areas:
+        required_employees[area] += len(employees_with_violations_per_area[area])
 
     # -------------------------------------------------
     # Build the human-readable summary
