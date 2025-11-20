@@ -97,7 +97,7 @@ def sort_employee_columns_by_row(tree, row_label, ascending=True):
 
     # Update headings to match new order - restore first column heading
     tree.heading(first_col, text=first_col)
-    tree.column(first_col, anchor="w", width=100)
+    tree.column(first_col, anchor="center", width=tree.column(first_col, "width"))
     for col in new_employee_order:
         tree.heading(col, text=col)
         tree.column(col, anchor="center", width=100)
@@ -116,6 +116,11 @@ def display_input_data(emp_path, req_path, limits_path, emp_frame, req_frame, li
             widget.destroy()
         try:
             df = pd.read_csv(csv_file, index_col=0 if has_index else None)
+            # === FOR EMPLOYEE DATA ONLY — FORCE A→Z COLUMN ORDER ===
+            if "Employee_Data" in os.path.basename(csv_file):
+                first_col = df.columns[0]
+                remaining_cols = sorted(df.columns[1:], key=lambda x: str(x).strip().lower())
+                df = df[[first_col] + remaining_cols]
         except Exception as e:
             messagebox.showerror("Error", f"Failed to load {csv_file}: {e}")
             return None
