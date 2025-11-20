@@ -298,7 +298,8 @@ def solve_schedule(employees, days, shifts, areas, shift_prefs, day_prefs, must_
         "\n\nPossible fixes:\n"
         "1. Add \"Max Shifts per Week\" to the Violate Rules Order in Hard_Limits.csv.\n"
         "2. Increase Max Shifts per Week for employees in the under-capacity area(s).\n"
-        "3. Remove or adjust \"Must have off\" dates for employees in the under-capacity area(s)."
+        "3. Remove or adjust \"Must have off\" dates for employees in the under-capacity area(s).\n"
+        "3. If you have many employees in a given work area, add Min Shifts per Week to the Violate Rules Order (min shifts > total shifts/week)."
     )
     error_msg = (
         "Failed to find a feasible schedule due to insufficient weekly capacity.\n\n"
