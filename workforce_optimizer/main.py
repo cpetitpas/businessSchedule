@@ -320,6 +320,15 @@ if __name__ == "__main__":
         emp_frame.grid(row=0, column=0, sticky="nsew")
         emp_frame.grid_rowconfigure(0, weight=1)
         emp_frame.grid_columnconfigure(0, weight=1)
+        hint_label = tk.Label(
+            scrollable_frame,
+            text="Employees shown A–Z • Right-click row labels to sort by any field • View Input Data = Reset to A–Z",
+            fg="gray",
+            font=("Arial", 9),
+            anchor="w",
+            justify="left"
+        )
+        hint_label.pack(fill="x", padx=20, pady=(8, 2))
         notebook.add(emp_frame, text="Employee Data")
         globals()['emp_frame'] = emp_frame
 
