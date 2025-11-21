@@ -25,13 +25,12 @@ def get_capacity_report(employees, work_areas, required, actual_days, shifts, ar
         for a in areas
     }
 
-    # Available capacity = Σ max_shifts per employee that can work the area
+    # Available capacity 
     available_capacity = defaultdict(int)
     for emp in employees:
-        area = work_areas[emp][0]                     # one area per employee
+        area = work_areas[emp][0]                     
         available_capacity[area] += max_shifts[emp]
 
-    # Identify short-falls
     shortfalls = {
         a: required_shifts[a] - available_capacity[a]
         for a in areas if required_shifts[a] > available_capacity[a]
@@ -80,7 +79,7 @@ def setup_problem(employees, day_offsets, shifts, areas, shift_prefs, day_prefs,
                         if required[day_name][a][s] > 0:
                             x[e][w][k][s][a] = pulp.LpVariable(f"assign_{e}_w{w}_{k}_{s}_{a}", cat="Binary")
                         else:
-                            x[e][w][k][s][a] = 0  # constant 0 - key exists, no assignment possible
+                            x[e][w][k][s][a] = 0  
 
     # Normalise day preferences
     non_weekend = ['Mon', 'Tue', 'Wed', 'Thu']
@@ -101,7 +100,7 @@ def setup_problem(employees, day_offsets, shifts, areas, shift_prefs, day_prefs,
         x[e][w][k][s][a] * (
             normalized_day_prefs[e][k] +
             (10 if shift_prefs[e][s] > 0 else (0 if relax_shift else -50)) +
-            1   # <<< THIS +1 IS THE KEY - encourages scheduling when neutral
+            1   
         )
         for e in x
         for w in range(num_weeks)
@@ -129,7 +128,7 @@ def add_constraints(
                 for a in areas:
                     req = required[day_name][a][s]
                     if req == 0:
-                        continue  # No variables created → nothing to constrain
+                        continue  
                     lhs = pulp.lpSum(
                         x[e][w][k][s][a]
                         for e in employees
@@ -187,7 +186,7 @@ def add_constraints(
         current = start_date - timedelta(days=6)
         weekends = []
         while current <= end_date + timedelta(days=2):
-            if current.weekday() == 4:               # Friday
+            if current.weekday() == 4:               
                 days = []
                 for d in [current, current + timedelta(days=1), current + timedelta(days=2)]:
                     if start_date <= d <= end_date:
@@ -202,7 +201,6 @@ def add_constraints(
             for weekend in weekends:
                 prob += pulp.lpSum(y[e][w][k] for w, k in weekend) <= max_weekend_days[e]
 
-    # Link y to x
     for e in x:
         num_options = len(shifts) * len(work_areas[e])
         if num_options == 0:
@@ -226,12 +224,10 @@ def solve_schedule(employees, days, shifts, areas, shift_prefs, day_prefs, must_
     start_weekday = start_date.weekday()
     actual_days = [day_names[(start_weekday + k) % 7] for k in range(7)]
 
-    # ----- NEW: capacity report (always returned) -----
     capacity_report = get_capacity_report(
         employees, work_areas, required, actual_days, shifts, areas, max_shifts
     )
-    # --------------------------------------------------
-
+    
     possible_rules = {
         "Preferred Days": 'relax_day',
         "Preferred Shift": 'relax_shift',
@@ -259,8 +255,8 @@ def solve_schedule(employees, days, shifts, areas, shift_prefs, day_prefs, must_
             min_shifts, max_shifts, max_weekend_days, num_weeks,
             relax_flags.get('relax_day', False),
             relax_flags.get('relax_shift', False),
-            required,          # ← NEW: pass required
-            actual_days        # ← already passed, keep it
+            required,          
+            actual_days        
         )
         add_constraints(
             prob, x, y, employees, day_offsets, shifts, areas, required, work_areas, constraints,
@@ -281,7 +277,7 @@ def solve_schedule(employees, days, shifts, areas, shift_prefs, day_prefs, must_
             logging.info("Solution found!")
             result_dict = {f"{a.lower()}_schedule": [] for a in areas}
             result_dict["violations"] = []
-            result_dict["capacity_report"] = capacity_report   # <-- always included
+            result_dict["capacity_report"] = capacity_report   
             for w in range(num_weeks):
                 for k in day_offsets:
                     for e in x:

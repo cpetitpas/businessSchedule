@@ -107,7 +107,7 @@ class TrialManager:
             return False
         reg_date_str = self.data.get("reg_date")
         if not reg_date_str:
-            return True  # legacy permanent
+            return True  
         try:
             reg_date = datetime.fromisoformat(reg_date_str).date()
             expiry = reg_date + timedelta(days=LICENSE_DAYS)
@@ -131,7 +131,7 @@ class TrialManager:
 
         reg_date_str = self.data.get("reg_date")
         if not reg_date_str:
-            return 999  # legacy permanent
+            return 999  
 
         try:
             reg_date = datetime.fromisoformat(reg_date_str).date()

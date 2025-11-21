@@ -89,13 +89,11 @@ def show_settings_dialog(parent: tk.Tk):
     dlg.transient(parent)
     dlg.grab_set()
     dlg.resizable(False, False)
-    # Set icon to match standard dialogs
     try:
-        from main import resource_path # Import from main.py
+        from main import resource_path 
         dlg.iconbitmap(resource_path(r'icons\teamwork.ico'))
     except Exception as e:
         pass
-    # current values
     cur_data_root = Path(user_data_dir())
     cur_output_root = Path(user_output_dir())
     # ------------------------------------------------------------------
@@ -140,14 +138,12 @@ def show_settings_dialog(parent: tk.Tk):
     def apply():
         new_data = Path(data_var.get().strip())
         new_output = Path(out_var.get().strip())
-        # sanity checks
         if not new_data.is_dir():
             messagebox.showerror("Invalid folder", "Data folder does not exist.", parent=dlg)
             return
         if not new_output.is_dir():
             messagebox.showerror("Invalid folder", "Output folder does not exist.", parent=dlg)
             return
-        # write JSON
         _save_settings({"data_dir": str(new_data), "output_dir": str(new_output)})
         messagebox.showinfo("Settings saved",
                             "Folder locations updated.\n"
@@ -236,7 +232,7 @@ def min_employees_to_avoid_weekend_violations(
 
         # Detect violations
         violations = []
-        excess_days = {}  # e → excess weekend days (for required employee calculation)
+        excess_days = {}  
 
         for e in employees:
             max_d = max_weekend_days.get(e, 2)
@@ -247,12 +243,10 @@ def min_employees_to_avoid_weekend_violations(
                 if count > max_d:
                     total_violated_days += (count - max_d)
 
-                    # Human-readable date range (optional, for debugging)
                     fri_date = start_date + timedelta(days=weekend[0][0]*7 + weekend[0][1])
                     sun_date = start_date + timedelta(days=weekend[2][0]*7 + weekend[2][1])
                     date_range = f"{fri_date:%b %d}–{sun_date:%b %d}, {fri_date.year}"
 
-                    # GET EMPLOYEE'S WORK AREA (exactly one)
                     emp_area = work_areas.get(e, [None])[0]
                     if emp_area is None:
                         emp_area = "Unknown"
@@ -271,12 +265,9 @@ def min_employees_to_avoid_weekend_violations(
     current_employees = {area: sum(1 for e in employees if area in work_areas[e]) for area in areas}
     required_employees = {area: current_employees[area] for area in areas}
     
-    # Count unique employees per area from violations
     employees_with_violations_per_area = {area: set() for area in areas}
     
     for v in violations:
-        # Extract employee name from violation string
-        # Format: "Employee violated ... → Area"
         try:
             emp_name = v.split(" violated ")[0]
             emp_area = v.split(" → ")[-1].strip()
@@ -287,7 +278,6 @@ def min_employees_to_avoid_weekend_violations(
             logging.warning(f"Could not parse violation string: {v}")
             continue
     
-    # Add one additional employee per area for each unique employee with violations
     for area in areas:
         required_employees[area] += len(employees_with_violations_per_area[area])
 
