@@ -48,22 +48,17 @@ def save_config(emp_file_var, req_file_var, limits_file_var, root):
 def on_closing(emp_file_var, req_file_var, limits_file_var, root):
     logging.debug("Starting application shutdown")
     try:
-        # Save configuration
         save_config(emp_file_var, req_file_var, limits_file_var, root)
-        # Close all matplotlib figures
         plt.close('all')
-        # Check for active threads (excluding main thread)
         active_threads = [t for t in threading.enumerate() if t is not threading.main_thread()]
         if active_threads:
             logging.warning(f"Active threads detected during shutdown: {[t.name for t in active_threads]}")
-        # Destroy Tkinter root
         root.destroy()
         logging.info("Application closed successfully")
     except Exception as e:
         logging.error(f"Error during shutdown: {e}")
         messagebox.showerror("Error", f"Failed to close application cleanly: {e}")
-        root.destroy()  # Ensure root is destroyed even if an error occurs
+        root.destroy()  
     finally:
-        # Ensure the application exits
         root.quit()
         logging.debug("Exiting on_closing")

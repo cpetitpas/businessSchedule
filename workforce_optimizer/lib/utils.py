@@ -89,13 +89,11 @@ def show_settings_dialog(parent: tk.Tk):
     dlg.transient(parent)
     dlg.grab_set()
     dlg.resizable(False, False)
-    # Set icon to match standard dialogs
     try:
-        from main import resource_path # Import from main.py
+        from main import resource_path 
         dlg.iconbitmap(resource_path(r'icons\teamwork.ico'))
     except Exception as e:
         pass
-    # current values
     cur_data_root = Path(user_data_dir())
     cur_output_root = Path(user_output_dir())
     # ------------------------------------------------------------------
@@ -140,14 +138,12 @@ def show_settings_dialog(parent: tk.Tk):
     def apply():
         new_data = Path(data_var.get().strip())
         new_output = Path(out_var.get().strip())
-        # sanity checks
         if not new_data.is_dir():
             messagebox.showerror("Invalid folder", "Data folder does not exist.", parent=dlg)
             return
         if not new_output.is_dir():
             messagebox.showerror("Invalid folder", "Output folder does not exist.", parent=dlg)
             return
-        # write JSON
         _save_settings({"data_dir": str(new_data), "output_dir": str(new_output)})
         messagebox.showinfo("Settings saved",
                             "Folder locations updated.\n"
@@ -236,40 +232,54 @@ def min_employees_to_avoid_weekend_violations(
 
         # Detect violations
         violations = []
+        excess_days = {}  
+
         for e in employees:
             max_d = max_weekend_days.get(e, 2)
+            total_violated_days = 0
+
             for weekend in weekends:
                 count = sum(worked[e][w][k] for w, k in weekend)
                 if count > max_d:
-                    # Build human-readable date range for this weekend
+                    total_violated_days += (count - max_d)
+
                     fri_date = start_date + timedelta(days=weekend[0][0]*7 + weekend[0][1])
                     sun_date = start_date + timedelta(days=weekend[2][0]*7 + weekend[2][1])
                     date_range = f"{fri_date:%b %d}–{sun_date:%b %d}, {fri_date.year}"
+
+                    emp_area = work_areas.get(e, [None])[0]
+                    if emp_area is None:
+                        emp_area = "Unknown"
+
                     violations.append(
-                        f"{e} has {count} weekend days (max {max_d}) on {date_range}"
+                        f"{e} violated Max Number of Weekend Days "
+                        f"(worked {count}, max {max_d}) on {date_range} → {emp_area}"
                     )
+
+            if total_violated_days > 0:
+                excess_days[e] = total_violated_days
 
     # -------------------------------------------------
     # Compute required extra staff per area
     # -------------------------------------------------
     current_employees = {area: sum(1 for e in employees if area in work_areas[e]) for area in areas}
     required_employees = {area: current_employees[area] for area in areas}
+    
+    employees_with_violations_per_area = {area: set() for area in areas}
+    
     for v in violations:
         try:
-            emp_name = v.split(" has ")[0]
-            count_str = v.split(" has ")[1].split(" weekend")[0]
-            count = int(count_str)
-            max_d = max_weekend_days.get(emp_name, 2)
+            emp_name = v.split(" violated ")[0]
+            emp_area = v.split(" → ")[-1].strip()
+            
+            if emp_area in employees_with_violations_per_area:
+                employees_with_violations_per_area[emp_area].add(emp_name)
         except Exception:
             logging.warning(f"Could not parse violation string: {v}")
             continue
-        excess = count - max_d
-        if excess <= 0:
-            continue
-        # Employee works in exactly one area
-        emp_area = next((a for a in work_areas[emp_name] if a in areas), None)
-        if emp_area:
-            required_employees[emp_area] += excess
+    
+    for area in areas:
+        required_employees[area] += len(employees_with_violations_per_area[area])
 
     # -------------------------------------------------
     # Build the human-readable summary

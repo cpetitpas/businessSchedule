@@ -25,7 +25,6 @@ def open_user_guide():
     """Open the local user guide (PDF or HTML) using system default viewer."""
     doc_path = resource_path(os.path.join('docs', 'UserGuide.pdf'))
     try:
-        # Convert to file:// URL for cross-platform safety
         url = Path(doc_path).as_uri()
         webbrowser.open(url)
     except Exception as e:
@@ -42,7 +41,6 @@ def install_sample_data():
 
         src_dir = resource_path('data')
 
-        # Compute the true default directory (exactly what user_data_dir() returns when no custom is set)
         default_dir = str(Path(appdirs.user_data_dir(appname='Workforce Optimizer', appauthor=False)) / "data")
 
         target_dir = user_data_dir()
@@ -72,7 +70,7 @@ def install_sample_data():
 
     except Exception as e:
         logging.error(f"install_sample_data failed: {e}")
-        pass  # Silent fail – user sees missing data later
+        pass  
 
 # ---------------------------------------------------------------
 # check_trial_and_exit() – fast, minimal UI
@@ -207,10 +205,8 @@ if __name__ == "__main__":
     logging.debug("Logging system initialized")
     logging.info("Application startup")
 
-    # ---- copy sample data (only on fresh install) -------------------
     install_sample_data()
 
-    # ---- build the *full* GUI (still hidden) ------------------------
     root.geometry("1200x800")
     root.minsize(1000, 600)
 
@@ -228,7 +224,7 @@ if __name__ == "__main__":
     scrollable_frame.bind("<Configure>", on_frame_configure)
     canvas.bind("<Configure>", on_frame_configure)
 
-    # Globals (same as before)
+    # Globals
     emp_file_var = tk.StringVar()
     req_file_var = tk.StringVar()
     limits_file_var = tk.StringVar()
@@ -320,6 +316,15 @@ if __name__ == "__main__":
         emp_frame.grid(row=0, column=0, sticky="nsew")
         emp_frame.grid_rowconfigure(0, weight=1)
         emp_frame.grid_columnconfigure(0, weight=1)
+        hint_label = tk.Label(
+            scrollable_frame,
+            text="Employees shown A–Z • Right-click row labels to sort by any field • View Input Data = Reset to A–Z",
+            fg="gray",
+            font=("Arial", 9),
+            anchor="w",
+            justify="left"
+        )
+        hint_label.pack(fill="x", padx=20, pady=(8, 2))
         notebook.add(emp_frame, text="Employee Data")
         globals()['emp_frame'] = emp_frame
 
@@ -359,7 +364,6 @@ if __name__ == "__main__":
         # === BUTTONS ===
         from lib.gui_handlers import display_input_data, save_input_data, save_schedule_changes
 
-        # First row: View and Save Input Data buttons
         btn_row1 = tk.Frame(scrollable_frame)
         btn_row1.pack(pady=5)
         tk.Button(btn_row1, text="View Input Data", command=lambda: display_input_data(
@@ -371,7 +375,6 @@ if __name__ == "__main__":
             emp_frame, req_frame, limits_frame, root
         )).pack(side="left", padx=5)
         
-        # Second row: Generate Schedule and Save Schedule Changes buttons
         btn_row2 = tk.Frame(scrollable_frame)
         btn_row2.pack(pady=5)
         tk.Button(btn_row2, text="Generate Schedule", command=generate_and_store_areas).pack(side="left", padx=5)
@@ -412,7 +415,6 @@ if __name__ == "__main__":
         except Exception:
             pass
     else:
-        # centre the main window when there is no saved geometry
         root.update_idletasks()
         w = root.winfo_width()
         h = root.winfo_height()
@@ -462,7 +464,6 @@ if __name__ == "__main__":
             days = tm.days_left()
 
             if days == 0:
-                # EXPIRED — NO CONTINUE
                 msg = ("**LICENSE EXPIRED**\n\n"
                     "Your 30-day trial or 1-year license has ended.\n"
                     "To continue using Workforce Optimizer,\n"
