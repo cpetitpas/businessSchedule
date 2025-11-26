@@ -316,6 +316,8 @@ if __name__ == "__main__":
         emp_frame.grid(row=0, column=0, sticky="nsew")
         emp_frame.grid_rowconfigure(0, weight=1)
         emp_frame.grid_columnconfigure(0, weight=1)
+        notebook.add(emp_frame, text="Employee Data")
+        # Store hint label reference for later management
         hint_label = tk.Label(
             scrollable_frame,
             text="Employees shown A–Z • Right-click row labels to sort by any field • View Input Data = Reset to A–Z",
@@ -324,8 +326,21 @@ if __name__ == "__main__":
             anchor="w",
             justify="left"
         )
-        hint_label.pack(fill="x", padx=20, pady=(8, 2))
-        notebook.add(emp_frame, text="Employee Data")
+        # Pack it just before btn_row1 (View Input Data button)
+        # Will be packed after file_frame and notebook, before buttons
+        
+        def show_employee_hint():
+            """Show hint when Employee Data tab is active"""
+            if notebook.index(notebook.select()) == 0:  # Employee Data is tab 0
+                hint_label.pack(pady=(10, 0), padx=10, anchor="w", before=btn_row1)
+            else:
+                hint_label.pack_forget()
+        
+        # Bind to tab change events
+        notebook.bind("<<NotebookTabChanged>>", lambda e: show_employee_hint())
+        
+        globals()['emp_frame'] = emp_frame
+        globals()['show_employee_hint'] = show_employee_hint
         globals()['emp_frame'] = emp_frame
 
         req_frame = tk.Frame(notebook)
