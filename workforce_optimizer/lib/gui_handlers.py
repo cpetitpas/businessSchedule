@@ -1070,7 +1070,7 @@ def generate_schedule(emp_var, req_var, limits_var, start_date_entry, num_weeks_
                 )
             report_lines.extend(["", min_str.strip()])
             summary_text.insert(tk.END, "\n".join(report_lines) + "\n")
-            summary_file = os.path.join(user_output_dir(), f"Summary_report_{start_date:%Y-%m-%d}.csv")
+            summary_file = os.path.join(user_output_dir(), f"Summary_report_{start_date:%Y-%m-%d}.txt")
             try:
                 with open(summary_file, "w", encoding="utf-8") as f:
                     f.write("\n".join(report_lines))
