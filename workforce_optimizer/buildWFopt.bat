@@ -6,6 +6,8 @@ setlocal EnableDelayedExpansion
 :: Double-click this file → perfect .exe in dist\WorkforceOptimizer\
 :: ==================================================================
 
+python -m pytest tests/
+
 echo.
 echo  ====================================================
 echo    Workforce Optimizer - Building Distributable EXE

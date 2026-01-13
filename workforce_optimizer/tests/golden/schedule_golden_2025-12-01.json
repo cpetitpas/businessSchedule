@@ -1,0 +1,682 @@
+{
+  "bar_schedule": [
+    [
+      "Anthony F",
+      "2025-12-14",
+      "Sun",
+      "Midday",
+      "Bar"
+    ],
+    [
+      "Joseph V",
+      "2025-12-14",
+      "Sun",
+      "Evening",
+      "Bar"
+    ],
+    [
+      "Justin N",
+      "2025-12-14",
+      "Sun",
+      "Morning",
+      "Bar"
+    ],
+    [
+      "Justin N",
+      "2025-12-15",
+      "Mon",
+      "Morning",
+      "Bar"
+    ],
+    [
+      "Melissa P",
+      "2025-12-15",
+      "Mon",
+      "Evening",
+      "Bar"
+    ],
+    [
+      "Daniel G",
+      "2025-12-16",
+      "Tue",
+      "Morning",
+      "Bar"
+    ],
+    [
+      "Joseph V",
+      "2025-12-16",
+      "Tue",
+      "Evening",
+      "Bar"
+    ],
+    [
+      "Justin N",
+      "2025-12-17",
+      "Wed",
+      "Morning",
+      "Bar"
+    ],
+    [
+      "Melissa P",
+      "2025-12-17",
+      "Wed",
+      "Evening",
+      "Bar"
+    ],
+    [
+      "Melissa P",
+      "2025-12-18",
+      "Thu",
+      "Evening",
+      "Bar"
+    ],
+    [
+      "Richard Z",
+      "2025-12-18",
+      "Thu",
+      "Morning",
+      "Bar"
+    ],
+    [
+      "Anthony F",
+      "2025-12-19",
+      "Fri",
+      "Midday",
+      "Bar"
+    ],
+    [
+      "Daniel G",
+      "2025-12-19",
+      "Fri",
+      "Morning",
+      "Bar"
+    ],
+    [
+      "Richard Z",
+      "2025-12-19",
+      "Fri",
+      "Evening",
+      "Bar"
+    ],
+    [
+      "Anthony F",
+      "2025-12-20",
+      "Sat",
+      "Evening",
+      "Bar"
+    ],
+    [
+      "Daniel G",
+      "2025-12-20",
+      "Sat",
+      "Morning",
+      "Bar"
+    ],
+    [
+      "Joseph V",
+      "2025-12-20",
+      "Sat",
+      "Midday",
+      "Bar"
+    ],
+    [
+      "Anthony F",
+      "2025-12-21",
+      "Sun",
+      "Midday",
+      "Bar"
+    ],
+    [
+      "Justin N",
+      "2025-12-21",
+      "Sun",
+      "Morning",
+      "Bar"
+    ],
+    [
+      "Richard Z",
+      "2025-12-21",
+      "Sun",
+      "Evening",
+      "Bar"
+    ],
+    [
+      "Anthony F",
+      "2025-12-22",
+      "Mon",
+      "Evening",
+      "Bar"
+    ],
+    [
+      "Justin N",
+      "2025-12-22",
+      "Mon",
+      "Morning",
+      "Bar"
+    ],
+    [
+      "Daniel G",
+      "2025-12-23",
+      "Tue",
+      "Morning",
+      "Bar"
+    ],
+    [
+      "Joseph V",
+      "2025-12-23",
+      "Tue",
+      "Evening",
+      "Bar"
+    ],
+    [
+      "Anthony F",
+      "2025-12-24",
+      "Wed",
+      "Morning",
+      "Bar"
+    ],
+    [
+      "Joseph V",
+      "2025-12-24",
+      "Wed",
+      "Evening",
+      "Bar"
+    ],
+    [
+      "Daniel G",
+      "2025-12-25",
+      "Thu",
+      "Morning",
+      "Bar"
+    ],
+    [
+      "Joseph V",
+      "2025-12-25",
+      "Thu",
+      "Evening",
+      "Bar"
+    ],
+    [
+      "Justin N",
+      "2025-12-26",
+      "Fri",
+      "Morning",
+      "Bar"
+    ],
+    [
+      "Melissa P",
+      "2025-12-26",
+      "Fri",
+      "Midday",
+      "Bar"
+    ],
+    [
+      "Richard Z",
+      "2025-12-26",
+      "Fri",
+      "Evening",
+      "Bar"
+    ],
+    [
+      "Daniel G",
+      "2025-12-27",
+      "Sat",
+      "Morning",
+      "Bar"
+    ],
+    [
+      "Joseph V",
+      "2025-12-27",
+      "Sat",
+      "Midday",
+      "Bar"
+    ],
+    [
+      "Melissa P",
+      "2025-12-27",
+      "Sat",
+      "Evening",
+      "Bar"
+    ]
+  ],
+  "capacity_report": "Capacity Report:\n- Kitchen: 24 shifts required, 24 max shifts available\n- Bar: 17 shifts required, 18 max shifts available\n- Dish: 7 shifts required, 8 max shifts available",
+  "dish_schedule": [
+    [
+      "James T",
+      "2025-12-14",
+      "Sun",
+      "Evening",
+      "Dish"
+    ],
+    [
+      "Christopher R",
+      "2025-12-15",
+      "Mon",
+      "Evening",
+      "Dish"
+    ],
+    [
+      "Christopher R",
+      "2025-12-16",
+      "Tue",
+      "Evening",
+      "Dish"
+    ],
+    [
+      "James T",
+      "2025-12-17",
+      "Wed",
+      "Evening",
+      "Dish"
+    ],
+    [
+      "Christopher R",
+      "2025-12-18",
+      "Thu",
+      "Evening",
+      "Dish"
+    ],
+    [
+      "James T",
+      "2025-12-19",
+      "Fri",
+      "Evening",
+      "Dish"
+    ],
+    [
+      "James T",
+      "2025-12-20",
+      "Sat",
+      "Evening",
+      "Dish"
+    ],
+    [
+      "Christopher R",
+      "2025-12-21",
+      "Sun",
+      "Evening",
+      "Dish"
+    ],
+    [
+      "James T",
+      "2025-12-22",
+      "Mon",
+      "Evening",
+      "Dish"
+    ],
+    [
+      "James T",
+      "2025-12-23",
+      "Tue",
+      "Evening",
+      "Dish"
+    ],
+    [
+      "James T",
+      "2025-12-24",
+      "Wed",
+      "Evening",
+      "Dish"
+    ],
+    [
+      "Christopher R",
+      "2025-12-25",
+      "Thu",
+      "Evening",
+      "Dish"
+    ],
+    [
+      "Christopher R",
+      "2025-12-26",
+      "Fri",
+      "Evening",
+      "Dish"
+    ],
+    [
+      "Christopher R",
+      "2025-12-27",
+      "Sat",
+      "Evening",
+      "Dish"
+    ]
+  ],
+  "kitchen_schedule": [
+    [
+      "Frank T",
+      "2025-12-14",
+      "Sun",
+      "Midday",
+      "Kitchen"
+    ],
+    [
+      "Linda F",
+      "2025-12-14",
+      "Sun",
+      "Evening",
+      "Kitchen"
+    ],
+    [
+      "Nicole L",
+      "2025-12-14",
+      "Sun",
+      "Evening",
+      "Kitchen"
+    ],
+    [
+      "Ryan M",
+      "2025-12-14",
+      "Sun",
+      "Morning",
+      "Kitchen"
+    ],
+    [
+      "Carol L",
+      "2025-12-15",
+      "Mon",
+      "Morning",
+      "Kitchen"
+    ],
+    [
+      "Linda F",
+      "2025-12-15",
+      "Mon",
+      "Evening",
+      "Kitchen"
+    ],
+    [
+      "Ruth W",
+      "2025-12-15",
+      "Mon",
+      "Evening",
+      "Kitchen"
+    ],
+    [
+      "Linda F",
+      "2025-12-16",
+      "Tue",
+      "Evening",
+      "Kitchen"
+    ],
+    [
+      "Rachel E",
+      "2025-12-16",
+      "Tue",
+      "Evening",
+      "Kitchen"
+    ],
+    [
+      "Ryan M",
+      "2025-12-16",
+      "Tue",
+      "Morning",
+      "Kitchen"
+    ],
+    [
+      "Carol L",
+      "2025-12-17",
+      "Wed",
+      "Morning",
+      "Kitchen"
+    ],
+    [
+      "Frank T",
+      "2025-12-17",
+      "Wed",
+      "Evening",
+      "Kitchen"
+    ],
+    [
+      "Ruth W",
+      "2025-12-17",
+      "Wed",
+      "Evening",
+      "Kitchen"
+    ],
+    [
+      "Carol L",
+      "2025-12-18",
+      "Thu",
+      "Morning",
+      "Kitchen"
+    ],
+    [
+      "Debra D",
+      "2025-12-18",
+      "Thu",
+      "Evening",
+      "Kitchen"
+    ],
+    [
+      "Nicole L",
+      "2025-12-18",
+      "Thu",
+      "Evening",
+      "Kitchen"
+    ],
+    [
+      "Debra D",
+      "2025-12-19",
+      "Fri",
+      "Morning",
+      "Kitchen"
+    ],
+    [
+      "Frank T",
+      "2025-12-19",
+      "Fri",
+      "Midday",
+      "Kitchen"
+    ],
+    [
+      "Nicole L",
+      "2025-12-19",
+      "Fri",
+      "Evening",
+      "Kitchen"
+    ],
+    [
+      "Rachel E",
+      "2025-12-19",
+      "Fri",
+      "Evening",
+      "Kitchen"
+    ],
+    [
+      "Debra D",
+      "2025-12-20",
+      "Sat",
+      "Morning",
+      "Kitchen"
+    ],
+    [
+      "Rachel E",
+      "2025-12-20",
+      "Sat",
+      "Evening",
+      "Kitchen"
+    ],
+    [
+      "Ruth W",
+      "2025-12-20",
+      "Sat",
+      "Midday",
+      "Kitchen"
+    ],
+    [
+      "Ryan M",
+      "2025-12-20",
+      "Sat",
+      "Evening",
+      "Kitchen"
+    ],
+    [
+      "Carol L",
+      "2025-12-21",
+      "Sun",
+      "Evening",
+      "Kitchen"
+    ],
+    [
+      "Debra D",
+      "2025-12-21",
+      "Sun",
+      "Morning",
+      "Kitchen"
+    ],
+    [
+      "Frank T",
+      "2025-12-21",
+      "Sun",
+      "Midday",
+      "Kitchen"
+    ],
+    [
+      "Nicole L",
+      "2025-12-21",
+      "Sun",
+      "Evening",
+      "Kitchen"
+    ],
+    [
+      "Carol L",
+      "2025-12-22",
+      "Mon",
+      "Morning",
+      "Kitchen"
+    ],
+    [
+      "Linda F",
+      "2025-12-22",
+      "Mon",
+      "Evening",
+      "Kitchen"
+    ],
+    [
+      "Ruth W",
+      "2025-12-22",
+      "Mon",
+      "Evening",
+      "Kitchen"
+    ],
+    [
+      "Linda F",
+      "2025-12-23",
+      "Tue",
+      "Evening",
+      "Kitchen"
+    ],
+    [
+      "Rachel E",
+      "2025-12-23",
+      "Tue",
+      "Evening",
+      "Kitchen"
+    ],
+    [
+      "Ryan M",
+      "2025-12-23",
+      "Tue",
+      "Morning",
+      "Kitchen"
+    ],
+    [
+      "Nicole L",
+      "2025-12-24",
+      "Wed",
+      "Evening",
+      "Kitchen"
+    ],
+    [
+      "Ruth W",
+      "2025-12-24",
+      "Wed",
+      "Evening",
+      "Kitchen"
+    ],
+    [
+      "Ryan M",
+      "2025-12-24",
+      "Wed",
+      "Morning",
+      "Kitchen"
+    ],
+    [
+      "Debra D",
+      "2025-12-25",
+      "Thu",
+      "Morning",
+      "Kitchen"
+    ],
+    [
+      "Frank T",
+      "2025-12-25",
+      "Thu",
+      "Evening",
+      "Kitchen"
+    ],
+    [
+      "Nicole L",
+      "2025-12-25",
+      "Thu",
+      "Evening",
+      "Kitchen"
+    ],
+    [
+      "Debra D",
+      "2025-12-26",
+      "Fri",
+      "Morning",
+      "Kitchen"
+    ],
+    [
+      "Frank T",
+      "2025-12-26",
+      "Fri",
+      "Midday",
+      "Kitchen"
+    ],
+    [
+      "Rachel E",
+      "2025-12-26",
+      "Fri",
+      "Evening",
+      "Kitchen"
+    ],
+    [
+      "Ruth W",
+      "2025-12-26",
+      "Fri",
+      "Evening",
+      "Kitchen"
+    ],
+    [
+      "Carol L",
+      "2025-12-27",
+      "Sat",
+      "Evening",
+      "Kitchen"
+    ],
+    [
+      "Linda F",
+      "2025-12-27",
+      "Sat",
+      "Evening",
+      "Kitchen"
+    ],
+    [
+      "Rachel E",
+      "2025-12-27",
+      "Sat",
+      "Midday",
+      "Kitchen"
+    ],
+    [
+      "Ryan M",
+      "2025-12-27",
+      "Sat",
+      "Morning",
+      "Kitchen"
+    ]
+  ],
+  "violations": []
+}
