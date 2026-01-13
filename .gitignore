@@ -6,6 +6,7 @@ workforce_optimizer/*.log
 workforce_optimizer/*.csv
 workforce_optimizer/__pycache__/
 workforce_optimizer/lib/__pycache__/
+workforce_optimizer/tests/__pycache__/
 workforce_optimizer/build/*
 workforce_optimizer/dist/*
 workforce_optimizer/output/*

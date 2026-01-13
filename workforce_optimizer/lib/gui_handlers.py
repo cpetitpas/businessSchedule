@@ -201,14 +201,7 @@ def display_input_data(emp_path, req_path, limits_path, emp_frame, req_frame, li
     create_treeview(limits_frame, limits_path, has_index=True)
     adjust_column_widths(root, all_listboxes, all_input_trees, notebook, summary_text)
 
-def save_input_data(emp_var, req_var, limits_var, emp_frame, req_frame, limits_frame, root):
-    """
-    Save the edited data from Treeview widgets back to their respective CSV files with overwrite prompt and option to save as a different filename.
-    Update the variables if saved to a new filename.
-    """
-    data_dir = user_data_dir()
-
-    def tree_to_df(tree, has_index=True):
+def tree_to_df(tree, has_index=True):
         columns = tree["columns"]
         data = []
         index = []
@@ -223,6 +216,15 @@ def save_input_data(emp_var, req_var, limits_var, emp_frame, req_frame, limits_f
             return pd.DataFrame(data, index=index, columns=columns[1:])
         return pd.DataFrame(data, columns=columns)
    
+    
+
+def save_input_data(emp_var, req_var, limits_var, emp_frame, req_frame, limits_frame, root):
+    """
+    Save the edited data from Treeview widgets back to their respective CSV files with overwrite prompt and option to save as a different filename.
+    Update the variables if saved to a new filename.
+    """
+    data_dir = user_data_dir()
+
     def get_save_filename(default_path, file_type):
         """Get filename with overwrite/skip/save-as options."""
         if os.path.exists(default_path):
@@ -1070,7 +1072,7 @@ def generate_schedule(emp_var, req_var, limits_var, start_date_entry, num_weeks_
                 )
             report_lines.extend(["", min_str.strip()])
             summary_text.insert(tk.END, "\n".join(report_lines) + "\n")
-            summary_file = os.path.join(user_output_dir(), f"Summary_report_{start_date:%Y-%m-%d}.csv")
+            summary_file = os.path.join(user_output_dir(), f"Summary_report_{start_date:%Y-%m-%d}.txt")
             try:
                 with open(summary_file, "w", encoding="utf-8") as f:
                     f.write("\n".join(report_lines))
