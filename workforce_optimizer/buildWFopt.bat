@@ -2,8 +2,8 @@
 setlocal EnableDelayedExpansion
 
 :: ==================================================================
-:: Workforce Optimizer - One-Click Build Script (2025 Edition)
-:: Double-click this file → perfect .exe in dist\WorkforceOptimizer\
+:: Workforce Optimizer - One-Click Build Script (2026 Edition)
+:: Double-click this file → WorkforceOptimizer.exe in dist\WorkforceOptimizer\
 :: ==================================================================
 
 python -m pytest tests/
