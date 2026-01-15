@@ -1,150 +1,203 @@
 # tests/test_employee_editing.py
 import pytest
+import pandas as pd
+import os
+import shutil
+import tempfile
+from pathlib import Path
 import tkinter as tk
 from tkinter import ttk
-from lib.gui_handlers import on_tree_double_click
-from unittest.mock import patch
 
-# SET TO True when you want to tune coordinates
-# SET TO False for normal fast test runs
-DEBUG_WINDOW = False
+from lib.gui_handlers import display_input_data, save_input_data, tree_to_df
 
 
-@pytest.fixture(scope="function")
-def visible_root():
+@pytest.fixture
+def temp_employee_csv():
+    original = Path("tests/data/Employee_Data.csv")
+    assert original.exists()
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        tmp_path = Path(tmp_dir)
+        dest = tmp_path / "Employee_Data.csv"
+        shutil.copy2(original, dest)
+        yield str(dest)
+
+
+@pytest.fixture
+def temp_req_csv():
+    content = """Day/Area,Sun,Mon,Tue,Wed,Thu,Fri,Sat
+Bar,1/1/1,1/0/1,1/0/1,1/0/1,1/0/1,1/1/1,1/1/1
+Kitchen,1/1/2,1/0/2,1/0/2,1/0/2,1/0/2,1/1/2,1/1/2
+Dish,0/0/1,0/0/1,0/0/1,0/0/1,0/0/1,0/0/1,0/0/1"""
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.csv', delete=False, encoding='utf-8') as f:
+        f.write(content)
+        path = f.name
+    yield path
+    os.unlink(path)
+
+
+@pytest.fixture
+def temp_limits_csv():
+    content = """Max Number of Shifts per Day,Violate Rules Order,Shifts,Work Areas
+1,"Preferred Days, Preferred Shift, Max Number of Weekend Days, Min Shifts per Week","Morning, Midday, Evening","Kitchen, Bar, Dish"
+"""
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.csv', delete=False, encoding='utf-8') as f:
+        f.write(content)
+        path = f.name
+    yield path
+    os.unlink(path)
+
+
+@pytest.fixture
+def mock_tk_root():
     root = tk.Tk()
-    root.title("Test Treeview")
-    root.geometry("900x600+100+100")
-    root.deiconify()  # Make visible - necessary for reliable identify/bbox
+    root.withdraw()
     yield root
     root.destroy()
 
 
-@pytest.fixture
-def sample_tree(visible_root):
-    tree = ttk.Treeview(visible_root, columns=["Employee/Input", "Anthony F", "Carol L"], show="headings")
-    tree.heading("Employee/Input", text="Employee/Input")
-    tree.heading("Anthony F", text="Anthony F")
-    tree.heading("Carol L", text="Carol L")
+def test_tree_to_df_roundtrip(temp_employee_csv):
+    df_original = pd.read_csv(temp_employee_csv)
+    root = tk.Tk()
+    root.withdraw()
+    frame = ttk.Frame(root)
 
-    tree.insert("", "end", iid="must_off", values=["Must have off", "11/13/2025", ""])
-    tree.insert("", "end", iid="max_shifts", values=["Max Shifts per Week", "3", "4"])
+    tree = None
+    def fake_display(*args, **kwargs):
+        nonlocal tree
+        from lib.gui_handlers import create_treeview
+        tree = create_treeview(frame, temp_employee_csv, has_index=False)
 
-    tree.pack(fill="both", expand=True)
-    visible_root.update_idletasks()
-    visible_root.update()
+    fake_display()
 
-    return tree
+    assert tree is not None
+    df_from_tree = tree_to_df(tree, has_index=False)
+
+    cols = ['Employee/Input'] + sorted(c for c in df_original.columns if c != 'Employee/Input')
+    df_original_sorted = df_original[cols].replace({pd.NA: '', float('nan'): ''})
+    df_from_tree_sorted = df_from_tree[cols].replace({pd.NA: '', float('nan'): ''})
+
+    pd.testing.assert_frame_equal(
+        df_original_sorted.reset_index(drop=True),
+        df_from_tree_sorted.reset_index(drop=True),
+        check_dtype=False,
+        check_exact=False,
+        check_like=True,
+        check_column_type=False
+    )
 
 
-def test_edit_must_have_off(visible_root, sample_tree, mocker):
-    # === DEBUG MODE - OPENS WINDOW AND SHOWS COORDINATES ===
-    if DEBUG_WINDOW:
-        print("\n" + "="*80)
-        print("DEBUG MODE ACTIVE")
-        print("Window is open. Do the following:")
-        print("  1. Move mouse over the cell you want to edit")
-        print("  2. Console shows live x/y")
-        print("  3. Double-click the cell — console shows DOUBLE-CLICK DETECTED + coordinates")
-        print("  4. Use those exact x/y below in the event = line")
-        print("  5. Close window when done")
-        print("="*80 + "\n")
+def test_display_save_reload_cycle(
+    temp_employee_csv,
+    temp_req_csv,
+    temp_limits_csv,
+    mock_tk_root
+):
+    root = mock_tk_root
 
-        def show_live_coords(event):
-            print(f"Live mouse: x={event.x}, y={event.y}")
+    emp_frame = ttk.Frame(root)
+    req_frame = ttk.Frame(root)
+    limits_frame = ttk.Frame(root)
+    notebook = ttk.Notebook(root)
+    summary_text = tk.Text(root)
 
-        def on_double_click(event):
-            row = sample_tree.identify_row(event.y)
-            col = sample_tree.identify_column(event.x)
-            print(f"\nDOUBLE-CLICK DETECTED!")
-            print(f"  x={event.x}, y={event.y}")
-            print(f"  Row iid: {row}")
-            print(f"  Column: {col}")
-            print("  → Use these x/y in the MockEvent below!\n")
+    emp_var = tk.StringVar(value=temp_employee_csv)
+    req_var = tk.StringVar(value=temp_req_csv)
+    limits_var = tk.StringVar(value=temp_limits_csv)
 
-        sample_tree.bind("<Motion>", show_live_coords)
-        sample_tree.bind("<Double-1>", on_double_click)
-        visible_root.bind("<Double-1>", on_double_click)  # fallback
+    display_input_data(
+        emp_var.get(),
+        req_var.get(),
+        limits_var.get(),
+        emp_frame,
+        req_frame,
+        limits_frame,
+        root,
+        notebook,
+        summary_text
+    )
 
-        visible_root.deiconify()
-        visible_root.title("DEBUG - Double-click cell - Close when ready")
-        visible_root.mainloop()
-        print("Window closed - continuing test...\n")
+    root.update_idletasks()
+    emp_frame.update_idletasks()
 
-    # === REAL SIMULATION - USE YOUR TUNED COORDINATES HERE ===
-    # Replace these with the values from the double-click print above
-    event = type("MockEvent", (), {"x": 616, "y": 37})
-
-    # Run the handler
-    on_tree_double_click(sample_tree, event, has_index=False)
-
-    # Give Tkinter time to create Entry
-    visible_root.update()
-
-    # Find real Entry widget
-    entry_widget = None
-    for child in visible_root.winfo_children():
-        if isinstance(child, tk.Entry):
-            entry_widget = child
+    emp_tree = None
+    for widget in emp_frame.winfo_children():
+        if isinstance(widget, ttk.Frame):
+            for sub in widget.winfo_children():
+                if isinstance(sub, ttk.Treeview):
+                    emp_tree = sub
+                    break
+        if emp_tree:
             break
 
-    if entry_widget is None:
-        pytest.fail("No Entry created - coordinates missed cell. Re-run with DEBUG_WINDOW=True to tune.")
+    assert emp_tree is not None, "Could not find Employee Data Treeview"
 
-    # Set value and trigger Return
-    entry_widget.delete(0, tk.END)
-    entry_widget.insert(0, "01/20/2026, 01/21/2026")
-    entry_widget.event_generate("<Return>")
+    # Force full realization
+    emp_tree.update()
+    root.update()
+    emp_frame.update_idletasks()
 
-    visible_root.update()
-    print(sample_tree.identify_row(37))
+    assert "Carol L" in emp_tree["columns"], \
+           f"Carol L not found in columns. Available: {emp_tree['columns']}"
 
-    updated = sample_tree.set("must_off", "Carol L")
-    assert updated == "01/20/2026, 01/21/2026", f"Got {updated}"
+    carol_column = "Carol L"
+    carol_idx = emp_tree["columns"].index(carol_column)
 
+    must_off_iid = max_shifts_iid = None
+    for iid in emp_tree.get_children():
+        values = emp_tree.item(iid, "values")
+        if not values:
+            continue
+        row_label = values[0].strip()
+        if row_label == "Must have off":
+            must_off_iid = iid
+        elif row_label == "Max Shifts per Week":
+            max_shifts_iid = iid
 
-def test_edit_max_shifts_carol(visible_root, sample_tree, mocker):
-    if DEBUG_WINDOW:
-        print("\n" + "="*80)
-        print("DEBUG MODE - MAX SHIFTS TEST")
-        print("Double-click the 'Max Shifts per Week' cell under Carol L")
-        print("="*80 + "\n")
+    assert must_off_iid is not None, "Row 'Must have off' not found"
+    assert max_shifts_iid is not None, "Row 'Max Shifts per Week' not found"
 
-        def show_live(event):
-            print(f"Live: x={event.x}, y={event.y}")
+    # Update
+    must_off_values = list(emp_tree.item(must_off_iid, "values"))
+    max_shifts_values = list(emp_tree.item(max_shifts_iid, "values"))
 
-        def on_dc(event):
-            row = sample_tree.identify_row(event.y)
-            col = sample_tree.identify_column(event.x)
-            print(f"DOUBLE-CLICK! x={event.x}, y={event.y} | Row: {row} | Col: {col}")
+    must_off_values[carol_idx] = "01/25/2026,01/26/2026"
+    max_shifts_values[carol_idx] = "4"
 
-        sample_tree.bind("<Motion>", show_live)
-        sample_tree.bind("<Double-1>", on_dc)
+    emp_tree.item(must_off_iid, values=must_off_values)
+    emp_tree.item(max_shifts_iid, values=max_shifts_values)
 
-        visible_root.deiconify()
-        visible_root.mainloop()
+    # Debug confirmation
+    print("After update - Must have off for Carol L:", 
+          emp_tree.item(must_off_iid, "values")[carol_idx])
+    print("After update - Max Shifts for Carol L:", 
+          emp_tree.item(max_shifts_iid, "values")[carol_idx])
 
-    # Use your tuned coordinates here
-    event = type("MockEvent", (), {"x": 612, "y": 53})
+    # Final force sync before save
+    root.update()
+    emp_tree.update_idletasks()
 
-    on_tree_double_click(sample_tree, event, has_index=False)
+    save_input_data(
+        emp_var,
+        req_var,
+        limits_var,
+        emp_frame,
+        req_frame,
+        limits_frame,
+        root
+    )
 
-    visible_root.update()
+    print(f"Test is reading back from: {temp_employee_csv}")
+    print("First few lines of saved file:")
+    with open(temp_employee_csv, 'r') as f:
+        print('\n'.join(f.readline().strip() for _ in range(5)))
 
-    entry_widget = None
-    for child in visible_root.winfo_children():
-        if isinstance(child, tk.Entry):
-            entry_widget = child
-            break
+    df_after = pd.read_csv(temp_employee_csv)
 
-    if entry_widget is None:
-        pytest.fail("No Entry - missed cell")
+    must_off_row = df_after[df_after["Employee/Input"].str.strip() == "Must have off"].iloc[0]
+    max_shifts_row = df_after[df_after["Employee/Input"].str.strip() == "Max Shifts per Week"].iloc[0]
 
-    entry_widget.delete(0, tk.END)
-    entry_widget.insert(0, "5")
-    entry_widget.event_generate("<Return>")
+    assert must_off_row["Carol L"].strip() == "01/25/2026,01/26/2026", \
+           f"Expected new date, got: {must_off_row['Carol L']}"
 
-    visible_root.update()
-
-    updated = sample_tree.set("max_shifts", "Carol L")
-    assert updated == "5", f"Got {updated}"
+    assert str(max_shifts_row["Carol L"]).strip() == "4", \
+           f"Expected 4, got: {max_shifts_row['Carol L']}"

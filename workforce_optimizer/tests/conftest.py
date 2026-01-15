@@ -1,35 +1,23 @@
 # tests/conftest.py
 import pytest
-import pandas as pd
-from pathlib import Path
-from lib.data_loader import load_csv
 from tkinter import messagebox
 
-TEST_DATA = Path(__file__).parent / "data"
-
-
-@pytest.fixture
-def sample_paths():
-    return {
-        "emp": str(TEST_DATA / "Employee_Data.csv"),
-        "req": str(TEST_DATA / "Personnel_Required.csv"),
-        "limits": str(TEST_DATA / "Hard_Limits.csv"),
-    }
-
-
-@pytest.fixture
-def sample_start_date():
-    from datetime import date
-    return date(2025, 12, 14)
-
-
-@pytest.fixture
-def sample_num_weeks():
-    return 2
-
 @pytest.fixture(autouse=True)
-def mock_messageboxes(mocker):
-    mocker.patch.object(messagebox, 'showerror')
-    mocker.patch.object(messagebox, 'showwarning')
-    mocker.patch.object(messagebox, 'showinfo')
-    yield
+def no_messagebox(monkeypatch):
+    """Prevent all tkinter messagebox calls during tests"""
+    def fake_yesnocancel(title, message, **kwargs):
+        # For "File exists - Overwrite?" we always choose Yes (overwrite)
+        if "File already exists" in message:
+            return True  # Yes → overwrite
+        return None  # or False/Cancel for others
+
+    def fake_showinfo(*args, **kwargs):
+        pass  # silent
+
+    def fake_showerror(*args, **kwargs):
+        pass
+
+    monkeypatch.setattr(messagebox, "askyesnocancel", fake_yesnocancel)
+    monkeypatch.setattr(messagebox, "showinfo", fake_showinfo)
+    monkeypatch.setattr(messagebox, "showerror", fake_showerror)
+    monkeypatch.setattr(messagebox, "showwarning", fake_showinfo)
