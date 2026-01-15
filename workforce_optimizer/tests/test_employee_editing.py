@@ -90,7 +90,8 @@ def test_display_save_reload_cycle(
     temp_employee_csv,
     temp_req_csv,
     temp_limits_csv,
-    mock_tk_root
+    mock_tk_root,
+    direct_employee_save
 ):
     root = mock_tk_root
 

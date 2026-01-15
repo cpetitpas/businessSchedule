@@ -8,26 +8,22 @@ def mock_tree():
     class MockTree:
         def __init__(self):
             self.columns = ["Employee/Input", "Anthony F", "Carol L"]
+            self._data = {
+                "0": ["Work Area", "Bar", "Kitchen"],
+                "1": ["Preferred Shift", "Evening", "Morning"]
+            }
             self.get_children = lambda: ["0", "1"]
-            self.item = lambda iid, option: {
-                "values": ["Work Area", "Bar", "Kitchen"] if iid == "0" else
-                          ["Preferred Shift", "Evening", "Morning"]
-            } if option == "values" else None
+
+        def item(self, iid, option=None):
+            values = self._data.get(iid, [""] * len(self.columns))
+            if option == "values":
+                return tuple(values)  # ← Must return tuple (what real Treeview does)
+            return {"values": values}  # Keep for compatibility
 
         def __getitem__(self, key):
             if key == "columns":
                 return self.columns
             raise KeyError(f"MockTree does not support key: {key}")
-
-        def set(self, iid, col, value=None):
-            if value is None:  # reading mode
-                values = self.item(iid, "values")
-                if values and col in self.columns:
-                    idx = self.columns.index(col)
-                    return values["values"][idx]
-                return ""
-            # writing mode (dummy for tests)
-            pass
 
     return MockTree()
 

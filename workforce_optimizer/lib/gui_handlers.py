@@ -241,29 +241,9 @@ def tree_to_df(tree, has_index=True):
     
 
 def save_input_data(emp_var, req_var, limits_var, emp_frame, req_frame, limits_frame, root):
-    """
-    Save the edited data from Treeview widgets back to their respective CSV files 
-    with overwrite prompt and option to save as a different filename.
-    Update the variables if saved to a new filename.
-    """
-    import os
-    from tkinter import messagebox, filedialog
-    
     data_dir = user_data_dir()
 
-    # === TEST MODE DETECTION ===
-    # When running under pytest, always use the exact passed path (temp file)
-    # and skip all remapping/prompts for Employee Data
-    is_test_mode = bool(os.environ.get("PYTEST_CURRENT_TEST"))
-
     def get_save_filename(default_path, file_type):
-        """Get filename with overwrite/skip/save-as options."""
-        if is_test_mode and file_type == "Employee Data":
-            # In tests: no prompt, direct overwrite of the temp path
-            print(f"TEST MODE: Saving {file_type} directly to: {default_path}")
-            return default_path
-
-        # Normal app behavior
         if os.path.exists(default_path):
             response = messagebox.askyesnocancel(
                 f"File Exists: {file_type}",
@@ -272,7 +252,6 @@ def save_input_data(emp_var, req_var, limits_var, emp_frame, req_frame, limits_f
                 f"No: Save As\n"
                 f"Cancel: Skip this file"
             )
-            
             if response is None:
                 return False
             elif response:
@@ -298,23 +277,14 @@ def save_input_data(emp_var, req_var, limits_var, emp_frame, req_frame, limits_f
             orig_emp_path = emp_var.get()
             if orig_emp_path:
                 emp_basename = os.path.basename(orig_emp_path)
-                
-                if is_test_mode:
-                    # Tests: use the passed temp path directly
-                    filename = orig_emp_path
-                else:
-                    # Normal: map to user data dir
-                    emp_path = os.path.join(data_dir, emp_basename)
-                    filename = get_save_filename(emp_path, "Employee Data")
-                
+                emp_path = os.path.join(data_dir, emp_basename)
+                filename = get_save_filename(emp_path, "Employee Data")
                 if filename and filename is not False:
                     emp_df = tree_to_df(emp_tree, has_index=False)
                     emp_df.to_csv(filename, index=False)
                     save_messages.append(f"Saved Employee Data to {filename}")
                     logging.info(f"Saved Employee Data to {filename}")
-                    
-                    # Only update var if not in test mode (to avoid side effects)
-                    if not is_test_mode and filename != orig_emp_path:
+                    if filename != orig_emp_path:
                         emp_var.set(filename)
 
         # Personnel Required
@@ -331,7 +301,7 @@ def save_input_data(emp_var, req_var, limits_var, emp_frame, req_frame, limits_f
                     req_df.to_csv(filename, index=False)
                     save_messages.append(f"Saved Personnel Required to {filename}")
                     logging.info(f"Saved Personnel Required to {filename}")
-                    if not is_test_mode and filename != orig_req_path:
+                    if filename != orig_req_path:
                         req_var.set(filename)
 
         # Hard Limits
@@ -348,20 +318,16 @@ def save_input_data(emp_var, req_var, limits_var, emp_frame, req_frame, limits_f
                     limits_df.to_csv(filename, index=False)
                     save_messages.append(f"Saved Hard Limits to {filename}")
                     logging.info(f"Saved Hard Limits to {filename}")
-                    if not is_test_mode and filename != orig_limits_path:
+                    if filename != orig_limits_path:
                         limits_var.set(filename)
 
         if save_messages:
-            if not is_test_mode:
-                messagebox.showinfo("Success", "\n".join(save_messages))
+            messagebox.showinfo("Success", "\n".join(save_messages))
         else:
-            if not is_test_mode:
-                messagebox.showwarning("Warning", "No input data was saved.")
-                
+            messagebox.showwarning("Warning", "No input data was saved.")
     except Exception as e:
         logging.error(f"Failed to save input data: {str(e)}")
-        if not is_test_mode:
-            messagebox.showerror("Error", f"Failed to save input data: {str(e)}")
+        messagebox.showerror("Error", f"Failed to save input data: {str(e)}")
 
 def employee_context_menu(tree, event, emp_frame, root):
     """Right-click on employee header → show menu + PERFECT, SUBTLE HIGHLIGHT"""

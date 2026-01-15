@@ -1,5 +1,6 @@
 # tests/test_solver_golden.py
 import json
+import pytest
 from pathlib import Path
 from lib.data_loader import load_csv
 from lib.solver import solve_schedule
