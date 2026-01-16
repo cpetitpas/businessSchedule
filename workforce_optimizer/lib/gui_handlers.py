@@ -238,35 +238,45 @@ def tree_to_df(tree, has_index=True):
     
     return df
    
-    
+def _get_save_filename(orig_path, file_type, parent_root=None):
+    if os.environ.get("TEST_DIRECT_SAVE") == "1":  # We'll set this env var in fixture
+        print(f"TEST MODE: Saving directly to original path: {orig_path}")
+        return orig_path
+
+    # Normal app mode
+    data_dir = user_data_dir()
+    basename = os.path.basename(orig_path)
+    default_path = os.path.join(data_dir, basename)
+
+    # This is where the patch will override: if test mode, return orig_path instead
+    if os.path.exists(default_path):
+        response = messagebox.askyesnocancel(
+            f"File Exists: {file_type}",
+            f"File already exists:\n{os.path.basename(default_path)}\n\n"
+            f"Yes: Overwrite\n"
+            f"No: Save As\n"
+            f"Cancel: Skip this file",
+            parent=parent_root
+        )
+        if response is None:
+            return False
+        elif response:
+            return default_path
+        else:
+            new_filename = filedialog.asksaveasfilename(
+                parent=parent_root,
+                title=f"Save {file_type} As",
+                initialdir=data_dir,
+                initialfile=basename,
+                defaultextension=".csv",
+                filetypes=[("CSV files", "*.csv"), ("All files", "*.*")]
+            )
+            return new_filename if new_filename else False
+    return default_path
+
 
 def save_input_data(emp_var, req_var, limits_var, emp_frame, req_frame, limits_frame, root):
     data_dir = user_data_dir()
-
-    def get_save_filename(default_path, file_type):
-        if os.path.exists(default_path):
-            response = messagebox.askyesnocancel(
-                f"File Exists: {file_type}",
-                f"File already exists:\n{os.path.basename(default_path)}\n\n"
-                f"Yes: Overwrite\n"
-                f"No: Save As\n"
-                f"Cancel: Skip this file"
-            )
-            if response is None:
-                return False
-            elif response:
-                return default_path
-            else:
-                new_filename = filedialog.asksaveasfilename(
-                    parent=root,
-                    title=f"Save {file_type} As",
-                    initialdir=data_dir,
-                    initialfile=os.path.basename(default_path),
-                    defaultextension=".csv",
-                    filetypes=[("CSV files", "*.csv"), ("All files", "*.*")]
-                )
-                return new_filename if new_filename else False
-        return default_path
 
     save_messages = []
     try:
@@ -276,9 +286,7 @@ def save_input_data(emp_var, req_var, limits_var, emp_frame, req_frame, limits_f
         if emp_tree:
             orig_emp_path = emp_var.get()
             if orig_emp_path:
-                emp_basename = os.path.basename(orig_emp_path)
-                emp_path = os.path.join(data_dir, emp_basename)
-                filename = get_save_filename(emp_path, "Employee Data")
+                filename = _get_save_filename(orig_emp_path, "Employee Data", root)  # ← Changed to call top-level
                 if filename and filename is not False:
                     emp_df = tree_to_df(emp_tree, has_index=False)
                     emp_df.to_csv(filename, index=False)
@@ -293,9 +301,7 @@ def save_input_data(emp_var, req_var, limits_var, emp_frame, req_frame, limits_f
         if req_tree:
             orig_req_path = req_var.get()
             if orig_req_path:
-                req_basename = os.path.basename(orig_req_path)
-                req_path = os.path.join(data_dir, req_basename)
-                filename = get_save_filename(req_path, "Personnel Required")
+                filename = _get_save_filename(orig_req_path, "Personnel Required", root)  # ← Changed to call top-level
                 if filename and filename is not False:
                     req_df = tree_to_df(req_tree, has_index=False)
                     req_df.to_csv(filename, index=False)
@@ -310,9 +316,7 @@ def save_input_data(emp_var, req_var, limits_var, emp_frame, req_frame, limits_f
         if limits_tree:
             orig_limits_path = limits_var.get()
             if orig_limits_path:
-                limits_basename = os.path.basename(orig_limits_path)
-                limits_path = os.path.join(data_dir, limits_basename)
-                filename = get_save_filename(limits_path, "Hard Limits")
+                filename = _get_save_filename(orig_limits_path, "Hard Limits", root)  # ← Changed to call top-level
                 if filename and filename is not False:
                     limits_df = tree_to_df(limits_tree, has_index=False)
                     limits_df.to_csv(filename, index=False)

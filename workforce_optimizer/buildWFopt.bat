@@ -1,12 +1,13 @@
 @echo off
 setlocal EnableDelayedExpansion
 
+
 :: ==================================================================
 :: Workforce Optimizer - One-Click Build Script (2026 Edition)
 :: Double-click this file → WorkforceOptimizer.exe in dist\WorkforceOptimizer\
 :: ==================================================================
 
-python -m pytest tests/
+python -m pytest tests/ -v || exit /b
 
 echo.
 echo  ====================================================
@@ -32,23 +33,24 @@ if exist "%BUILD_DIR%"  rmdir /s /q "%BUILD_DIR%"
 
 :: --- Step Run PyInstaller ---------
 echo [2/6] Running PyInstaller...
-pyinstaller main.spec --clean
+pyinstaller main.spec --clean || exit /b
 
 :: --- Build installer -----------------------------------
 echo [3/6] Build installer...
-"C:\Program Files (x86)\Inno Setup 6\ISCC.exe" .\%INSTALLER_SCRIPT%
+"C:\Program Files (x86)\Inno Setup 6\ISCC.exe" .\%INSTALLER_SCRIPT% || exit /b
 
 :: --- Digitally sign executable -----------------------------------
 echo [4/6] Digitally sign executable...
 set "PWD="
 set /p PWD="Enter code-signing password: "
-"C:\Program Files (x86)\Windows Kits\10\bin\10.0.26100.0\x64\signtool.exe" sign /f "C:\sign\WorkforceOptimizer.pfx" /p %PWD% /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 "%DIST_DIR%\%APP_NAME%.exe"
+"C:\Program Files (x86)\Windows Kits\10\bin\10.0.26100.0\x64\signtool.exe" sign /f "C:\sign\WorkforceOptimizer.pfx" /p %PWD% /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 "%DIST_DIR%\%APP_NAME%.exe" || exit /b
 
 :: --- Digitally sign the installer -----------------------
 echo [5/6] Digitally sign installer...
 set "PWD="
 set /p PWD="Enter code-signing password: "
-"C:\Program Files (x86)\Windows Kits\10\bin\10.0.26100.0\x64\signtool.exe" sign /f "C:\sign\WorkforceOptimizer.pfx" /p %PWD% /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 "%OUTPUT_DIR%\%INSTALLER_FILE_NAME%.exe"
+"C:\Program Files (x86)\Windows Kits\10\bin\10.0.26100.0\x64\signtool.exe" sign /f "C:\sign\WorkforceOptimizer.pfx" /p %PWD% /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 "%OUTPUT_DIR%\%INSTALLER_FILE_NAME%.exe" || exit /b
+
 
 :: --- Done! -------------------------------------------------
 echo.

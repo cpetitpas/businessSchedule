@@ -85,13 +85,12 @@ def test_tree_to_df_roundtrip(temp_employee_csv):
         check_column_type=False
     )
 
-
 def test_display_save_reload_cycle(
     temp_employee_csv,
     temp_req_csv,
     temp_limits_csv,
     mock_tk_root,
-    direct_employee_save
+    direct_employee_save  # This is what activates the patch
 ):
     root = mock_tk_root
 

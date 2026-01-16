@@ -3,14 +3,25 @@ import sys
 import os
 from pathlib import Path
 import pytest
-from tkinter import messagebox, filedialog
+from tkinter import messagebox, filedialog, ttk
 from datetime import date
 from unittest.mock import patch
-from lib.utils import user_data_dir
+from lib.gui_handlers import tree_to_df
+import lib.gui_handlers
 
 PROJECT_ROOT = Path(__file__).parent.parent.resolve()
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
+
+@pytest.fixture(autouse=True)
+def reset_gui_globals():
+    """Reset GUI-related globals before/after the editing test to prevent leakage"""
+    from lib.gui_handlers import all_input_trees, all_listboxes
+    all_input_trees.clear()
+    all_listboxes.clear()
+    yield
+    all_input_trees.clear()
+    all_listboxes.clear()
 
 @pytest.fixture(scope="session")
 def sample_paths():
@@ -31,41 +42,10 @@ def sample_num_weeks():
 
 @pytest.fixture
 def direct_employee_save(monkeypatch):
-    """Force save_input_data to save Employee Data directly to the passed temp path."""
-
-    def patched_get_save_filename(default_path, file_type):
-        if file_type == "Employee Data":
-            print(f"DIRECT SAVE (fixture): Using temp path directly: {default_path}")
-            return default_path  # No prompt, no remap
-        # For other files, use original behavior (you can expand if needed)
-        if os.path.exists(default_path):
-            response = messagebox.askyesnocancel(
-                f"File Exists: {file_type}",
-                f"File already exists:\n{os.path.basename(default_path)}\n\n"
-                f"Yes: Overwrite\nNo: Save As\nCancel: Skip"
-            )
-            if response is None:
-                return False
-            elif response:
-                return default_path
-            else:
-                new_filename = filedialog.asksaveasfilename(
-                    parent=None,
-                    title=f"Save {file_type} As",
-                    initialdir=user_data_dir(),
-                    initialfile=os.path.basename(default_path),
-                    defaultextension=".csv",
-                    filetypes=[("CSV files", "*.csv"), ("All files", "*.*")]
-                )
-                return new_filename if new_filename else False
-        return default_path
-
-    # Patch the nested function inside save_input_data
-    monkeypatch.setattr(
-        'lib.gui_handlers.save_input_data.<locals>.get_save_filename',
-        patched_get_save_filename
-    )
-    yield  
+    print("FIXTURE ACTIVATED: direct_employee_save is running!")
+    monkeypatch.setenv("TEST_DIRECT_SAVE", "1")
+    yield
+    monkeypatch.delenv("TEST_DIRECT_SAVE", raising=False) 
 
 @pytest.fixture(autouse=True)
 def no_messagebox(monkeypatch):
