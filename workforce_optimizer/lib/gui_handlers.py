@@ -41,7 +41,7 @@ def sort_employee_columns_by_row(tree, row_label, ascending=True):
     n = len(employee_columns)
     sort_items = []
     for i, col in enumerate(employee_columns):
-        cell_idx = i + 1  # +1 because values[0] is the row label
+        cell_idx = i + 1
         raw = target_values[cell_idx] if cell_idx < len(target_values) else ""
         raw_str = str(raw).strip()
         if not raw_str or raw_str.lower() in {"", "nan", "none"}:
@@ -467,102 +467,7 @@ def on_tree_double_click(tree, event, has_index):
     entry.place(x=x, y=y, width=width, height=height)
     entry.focus_set()
 
-def _add_employee_to_cell(names_list, available_employees, filter_var, area):
-    win = tk.Toplevel()
-    win.title("Add Employee")
-    win.geometry("300x280")
-    win.transient(win.master)
-    win.grab_set()
-    tk.Label(win, text="Select Employee:", font=("Arial", 10, "bold")).pack(pady=(10,5))
-    filter_frame = tk.Frame(win)
-    filter_frame.pack(pady=5)
-    chk = tk.Checkbutton(
-        filter_frame,
-        text=f"Only show {area} employees",
-        variable=filter_var,
-        font=("Arial", 9)
-    )
-    chk.pack()
-    combo = ttk.Combobox(win, state="readonly", width=35)
-    combo.pack(pady=8)
-    def update_combo(*args):
-        show_filtered = filter_var.get()
-        if show_filtered:
-            current_list = [n for n in available_employees if n not in names_list]
-        else:
-            current_list = [n for n in available_employees if n not in names_list]
-        combo['values'] = sorted(current_list)
-        if current_list and combo.get() not in current_list:
-            combo.set('')
-    update_combo()
-    filter_var.trace("w", update_combo)
-    def confirm():
-        name = combo.get()
-        if name and name not in names_list:
-            names_list.append(name)
-        win.destroy()
-    btn_frame = tk.Frame(win)
-    btn_frame.pack(pady=15)
-    tk.Button(btn_frame, text="Add", command=confirm, width=10).pack(side=tk.LEFT, padx=8)
-    tk.Button(btn_frame, text="Cancel", command=win.destroy, width=10).pack(side=tk.LEFT, padx=8)
-    win.after(100, lambda: combo.focus())
-
-def _delete_employee_from_cell(names_list, lb):
-    sel = lb.curselection()
-    if sel and messagebox.askyesno("Remove", f"Remove {lb.get(sel[0])}?"):
-        names_list.pop(sel[0])
-        lb.delete(sel[0])
-
-def _open_edit_dialog(tree, item, col, area, emp_file_path):
-    cell_value = tree.set(item, col)
-    entry = tk.Entry(tree, background='white', foreground='black', relief='solid', bd=1)
-    entry.insert(0, cell_value if cell_value else "Click to edit...")
-    entry.config(state='readonly')
-    x, y, width, height = tree.bbox(item, col)
-    entry.place(x=x, y=y, width=width, height=height)
-    entry.focus_set()
-    def update_cell():
-        new_val = ", ".join(names)
-        tree.set(item, col, new_val)
-        entry.config(state='normal')
-        entry.delete(0, tk.END)
-        entry.insert(0, new_val if new_val else "")
-        entry.config(state='readonly')
-    try:
-        emp_df = pd.read_csv(emp_file_path, index_col="Employee/Input")
-        emp_df = emp_df.transpose()
-        available = emp_df[emp_df['Work Area'] == area].index.tolist()
-        if not available:
-            messagebox.showerror("Error", f"No employees for {area}")
-            entry.destroy()
-            return
-    except Exception as e:
-        messagebox.showerror("Error", f"Load failed: {e}")
-        entry.destroy()
-        return
-    dialog = tk.Toplevel()
-    dialog.title(f"Edit - {area}")
-    dialog.geometry("350x450")
-    dialog.transient(tree.winfo_toplevel())
-    dialog.grab_set()
-    info = tk.Frame(dialog)
-    info.pack(pady=5)
-    tk.Label(info, text=f"Shift: {tree.set(item, tree['columns'][0])}", font=("Arial", 10, "bold")).pack()
-    tk.Label(info, text=f"Date: {tree.heading(col)['text']}", font=("Arial", 9)).pack()
-    tk.Label(dialog, text="Current Employees:").pack(pady=5)
-    lb = tk.Listbox(dialog, height=10)
-    names = [n.strip() for n in cell_value.split(',') if n.strip()]
-    for n in names:
-        lb.insert(tk.END, n)
-    lb.pack(pady=5, fill="both", expand=True)
-    btns = tk.Frame(dialog)
-    btns.pack(pady=10)
-    tk.Button(btns, text="Add", command=lambda: _add_employee_to_cell(names, available, tk.BooleanVar(value=True), area)).pack(side=tk.LEFT, padx=5)
-    tk.Button(btns, text="Delete", command=lambda: _delete_employee_from_cell(names, lb)).pack(side=tk.LEFT, padx=5)
-    tk.Button(btns, text="Close", command=lambda: [update_cell(), entry.destroy(), dialog.destroy()]).pack(side=tk.LEFT, padx=5)
-    dialog.protocol("WM_DELETE_WINDOW", lambda: [update_cell(), entry.destroy(), dialog.destroy()])
-
-def edit_schedule_cell(tree, event, area, emp_file_path, delay_dialog=False):
+def edit_schedule_cell(tree, event, area, emp_file_path):
     item = tree.identify_row(event.y)
     col = tree.identify_column(event.x)
     if not item or not col:
@@ -577,13 +482,140 @@ def edit_schedule_cell(tree, event, area, emp_file_path, delay_dialog=False):
     x, y, width, height = tree.bbox(item, col)
     entry.place(x=x, y=y, width=width, height=height)
     entry.focus_set()
-    def open_dialog_now():
-        _open_edit_dialog(tree, item, col, area, emp_file_path)
+    
+    names = [n.strip() for n in cell_value.split(',') if n.strip()]
+    
+    def update_cell():
+        new_value = ', '.join(names)
+        tree.set(item, col, new_value)
         entry.destroy()
-    if delay_dialog:
-        tree.after(50, open_dialog_now)
-    else:
-        open_dialog_now()
+
+    def open_edit_dialog():
+        entry.config(state='normal')
+        entry.delete(0, tk.END)
+        entry.insert(0, cell_value)
+        entry.config(state='readonly')
+        col_name = tree.heading(col)['text']
+        shift_name = tree.set(item, tree["columns"][0])
+        try:
+            emp_df = pd.read_csv(emp_file_path, index_col="Employee/Input")
+            emp_df = emp_df.transpose()
+            available = emp_df[emp_df['Work Area'] == area].index.tolist()
+            if not available:
+                messagebox.showerror("Error", f"No employees for {area}")
+                entry.destroy()
+                return
+        except Exception as e:
+            messagebox.showerror("Error", f"Load failed: {e}")
+            entry.destroy()
+            return
+        
+        dialog = tk.Toplevel()
+        try:
+            from main import resource_path
+            dialog.iconbitmap(resource_path(r'icons\teamwork.ico'))
+        except:
+            pass
+        dialog.title(f"Edit - {area}")
+        dialog.geometry("350x450")
+
+        # Position near the clicked cell
+        cell_x = tree.winfo_rootx() + x
+        cell_y = tree.winfo_rooty() + y
+        dlg_w, dlg_h = 350, 450
+        pos_x = cell_x + width + 10   # right of cell
+        pos_y = cell_y - 50           # above cell
+        # Clamp to screen
+        screen_w = dialog.winfo_screenwidth()
+        screen_h = dialog.winfo_screenheight()
+        if pos_x + dlg_w > screen_w:
+            pos_x = cell_x - dlg_w - 10
+        if pos_y + dlg_h > screen_h:
+            pos_y = cell_y + height + 10
+        if pos_y < 0:
+            pos_y = 0
+        dialog.geometry(f"{dlg_w}x{dlg_h}+{pos_x}+{pos_y}")
+        dialog.transient(tree.winfo_toplevel())
+        dialog.grab_set()
+        info = tk.Frame(dialog)
+        info.pack(pady=5)
+        tk.Label(info, text=f"Shift: {shift_name}", font=("Arial", 10, "bold")).pack()
+        tk.Label(info, text=f"Date: {col_name}", font=("Arial", 9)).pack()
+        tk.Label(dialog, text="Current Employees:").pack(pady=5)
+        lb = tk.Listbox(dialog, height=10)
+        for n in names:
+            lb.insert(tk.END, n)
+        lb.pack(pady=5, fill="both", expand=True)
+        btns = tk.Frame(dialog)
+        btns.pack(pady=10)
+        tk.Button(btns, text="Add", command=lambda: _add_employee_to_cell(names, available, lb, dialog, area, emp_file_path)).pack(side=tk.LEFT, padx=5)
+        tk.Button(btns, text="Delete", command=lambda: _delete_employee_from_cell(names, lb)).pack(side=tk.LEFT, padx=5)
+        tk.Button(btns, text="Close", command=lambda: [update_cell(), dialog.destroy()]).pack(side=tk.LEFT, padx=5)
+        dialog.protocol("WM_DELETE_WINDOW", lambda: [update_cell(), dialog.destroy()])
+    tree.after(50, open_edit_dialog)
+
+def _add_employee_to_cell(names, available, lb, parent_dialog, area="", emp_file_path=None):
+    win = tk.Toplevel(parent_dialog)
+    win.title("Add Employee")
+    win.geometry("300x280")
+    win.transient(parent_dialog)
+    win.grab_set()
+    try:
+        from main import resource_path
+        win.iconbitmap(resource_path(r'icons\teamwork.ico'))
+    except:
+        pass
+    px = parent_dialog.winfo_rootx() + 50
+    py = parent_dialog.winfo_rooty() + 50
+    win.geometry(f"+{px}+{py}")
+    tk.Label(win, text="Select Employee:", font=("Arial", 10, "bold")).pack(pady=(10,5))
+    filter_var = tk.BooleanVar(value=True)
+    filter_frame = tk.Frame(win)
+    filter_frame.pack(pady=5)
+    chk = tk.Checkbutton(
+        filter_frame,
+        text=f"Only show {area} employees",
+        variable=filter_var,
+        font=("Arial", 9)
+    )
+    chk.pack()
+    combo = ttk.Combobox(win, state="readonly", width=35)
+    combo.pack(pady=8)
+    try:
+        full_emp_df = pd.read_csv(emp_file_path, index_col="Employee/Input")
+        full_emp_df = full_emp_df.transpose()
+        all_employees = full_emp_df.index.tolist()
+    except:
+        all_employees = []
+    def update_combo(*args):
+        show_filtered = filter_var.get()
+        if show_filtered:
+            current_list = [n for n in available if n not in names]
+        else:
+            current_list = all_employees
+        combo['values'] = sorted(current_list)
+        if current_list and combo.get() not in current_list:
+            combo.set('')
+    update_combo()
+    filter_var.trace("w", update_combo)
+    def confirm():
+        name = combo.get()
+        if name and name not in names:
+            names.append(name)
+            lb.insert(tk.END, name)
+            win.destroy()
+    btn_frame = tk.Frame(win)
+    btn_frame.pack(pady=15)
+    tk.Button(btn_frame, text="Add", command=confirm, width=10).pack(side=tk.LEFT, padx=8)
+    tk.Button(btn_frame, text="Cancel", command=win.destroy, width=10).pack(side=tk.LEFT, padx=8)
+    win.after(100, lambda: combo.focus())
+
+def _delete_employee_from_cell(names, lb):
+    sel = lb.curselection()
+    if sel and messagebox.askyesno("Remove", f"Remove {lb.get(sel[0])}?"):
+        names.pop(sel[0])
+        lb.delete(sel[0])
+        lb.update()
 
 def save_schedule_changes(start_date, root, schedule_container, areas):
     def get_save_filename(default_path, file_type):
