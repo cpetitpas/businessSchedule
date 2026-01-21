@@ -288,7 +288,7 @@ if __name__ == "__main__":
         date_col = tk.Frame(date_weeks_frame)
         date_col.pack(side="left", padx=20)
         tk.Label(date_col, text="Select Start Date:").pack()
-        start_date_entry = DateEntry(date_col, width=12, background='darkblue', foreground='white', borderwidth=2, year=2025, firstweekday='sunday')
+        start_date_entry = DateEntry(date_col, width=12, background='darkblue', foreground='white', borderwidth=2, year=2026, firstweekday='sunday')
         start_date_entry.pack(pady=5)
         
         weeks_col = tk.Frame(date_weeks_frame)

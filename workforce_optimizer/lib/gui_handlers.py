@@ -511,13 +511,13 @@ def edit_schedule_cell(tree, event, area, emp_file_path):
             return
         
         dialog = tk.Toplevel()
+        dialog.withdraw()  # Hide dialog initially to prevent flash
         try:
             from main import resource_path
             dialog.iconbitmap(resource_path(r'icons\teamwork.ico'))
         except:
             pass
         dialog.title(f"Edit - {area}")
-        dialog.geometry("350x450")
 
         # Position near the clicked cell
         cell_x = tree.winfo_rootx() + x
@@ -536,7 +536,6 @@ def edit_schedule_cell(tree, event, area, emp_file_path):
             pos_y = 0
         dialog.geometry(f"{dlg_w}x{dlg_h}+{pos_x}+{pos_y}")
         dialog.transient(tree.winfo_toplevel())
-        dialog.grab_set()
         info = tk.Frame(dialog)
         info.pack(pady=5)
         tk.Label(info, text=f"Shift: {shift_name}", font=("Arial", 10, "bold")).pack()
@@ -552,6 +551,8 @@ def edit_schedule_cell(tree, event, area, emp_file_path):
         tk.Button(btns, text="Delete", command=lambda: _delete_employee_from_cell(names, lb)).pack(side=tk.LEFT, padx=5)
         tk.Button(btns, text="Close", command=lambda: [update_cell(), dialog.destroy()]).pack(side=tk.LEFT, padx=5)
         dialog.protocol("WM_DELETE_WINDOW", lambda: [update_cell(), dialog.destroy()])
+        dialog.deiconify()  # Show dialog after all positioning is complete
+        dialog.grab_set()
     tree.after(50, open_edit_dialog)
 
 def _add_employee_to_cell(names, available, lb, parent_dialog, area="", emp_file_path=None):
