@@ -15,6 +15,7 @@ import numpy as np
 import os
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from .utils import min_employees_to_avoid_weekend_violations, adjust_column_widths, user_output_dir
+
 logging.getLogger('matplotlib').setLevel(logging.WARNING)
 logging.getLogger('PIL').setLevel(logging.WARNING)
 
@@ -31,22 +32,18 @@ def sort_employee_columns_by_row(tree, row_label, ascending=True):
             target_iid = iid
             target_values = vals
             break
-
     if not target_values or len(target_values) < 2:
         messagebox.showwarning("Sort Error", f"Row '{row_label}' not found.")
         return
-
     columns = list(tree["columns"])
     first_col = columns[0]
     employee_columns = columns[1:]
     n = len(employee_columns)
-
     sort_items = []
     for i, col in enumerate(employee_columns):
-        cell_idx = i + 1  # +1 because values[0] is the row label
+        cell_idx = i + 1
         raw = target_values[cell_idx] if cell_idx < len(target_values) else ""
         raw_str = str(raw).strip()
-
         if not raw_str or raw_str.lower() in {"", "nan", "none"}:
             key = (3, "")
         elif row_label.lower() == "must have off":
@@ -62,109 +59,95 @@ def sort_employee_columns_by_row(tree, row_label, ascending=True):
                     key = (1, dt if ascending else datetime(9999,12,31) - dt)
                 except:
                     key = (2, raw_str.lower())
-
         sort_items.append((key, i, col))
-
-    # Sort
     sort_items.sort(reverse=not ascending)
     new_employee_order = [item[2] for item in sort_items]
     old_to_new_index = {old_idx: new_idx for new_idx, (_, old_idx, _) in enumerate(sort_items)}
-
     tree["columns"] = [first_col] + new_employee_order
-
     for iid in tree.get_children():
         old_vals = list(tree.item(iid, "values"))
         if len(old_vals) < 2:
             continue
-
         row_label_cell = old_vals[0]
-        old_employee_data = old_vals[1:1+n]  
-
-        # Rebuild in new order
+        old_employee_data = old_vals[1:1+n]
         new_employee_data = [""] * n
         for old_idx, cell_value in enumerate(old_employee_data):
             if old_idx < n:
                 new_idx = old_to_new_index[old_idx]
                 new_employee_data[new_idx] = cell_value
-
         tree.item(iid, values=[row_label_cell] + new_employee_data)
-
     tree.heading(first_col, text=first_col)
     tree.column(first_col, anchor="center", width=tree.column(first_col, "width"))
     for col in new_employee_order:
         tree.heading(col, text=col)
         tree.column(col, anchor="center", width=100)
-
     direction = "Ascending" if ascending else "Descending"
     messagebox.showinfo("Sorted", f"Employees sorted by: {row_label}\n({direction})")
 
+def create_treeview(frame, csv_file, has_index=True):
+    for widget in frame.winfo_children():
+        widget.destroy()
+    try:
+        df = pd.read_csv(csv_file, index_col=0 if has_index else None)
+        if "Employee_Data" in os.path.basename(csv_file):
+            first_col = df.columns[0]
+            remaining_cols = sorted(df.columns[1:], key=lambda x: str(x).strip().lower())
+            df = df[[first_col] + remaining_cols]
+    except Exception as e:
+        messagebox.showerror("Error", f"Failed to load {csv_file}: {e}")
+        return None
+    frame.rowconfigure(0, weight=1)
+    frame.columnconfigure(0, weight=1)
+    tree_frame = ttk.Frame(frame)
+    tree_frame.grid(row=0, column=0, sticky="nsew")
+    tree = ttk.Treeview(tree_frame, show="headings", selectmode='none')
+    vsb = ttk.Scrollbar(tree_frame, orient="vertical", command=tree.yview)
+    hsb = ttk.Scrollbar(tree_frame, orient="horizontal", command=tree.xview)
+    tree.configure(yscrollcommand=vsb.set, xscrollcommand=hsb.set)
+    tree.grid(row=0, column=0, sticky="nsew")
+    vsb.grid(row=0, column=1, sticky="ns")
+    hsb.grid(row=1, column=0, sticky="ew")
+    tree_frame.rowconfigure(0, weight=1)
+    tree_frame.columnconfigure(0, weight=1)
+    all_input_trees.append(tree)
+    def _on_mousewheel(event):
+        if event.delta:
+            tree.yview_scroll(int(-1 * (event.delta / 120)), "units")
+        elif event.num == 4:
+            tree.yview_scroll(-1, "units")
+        elif event.num == 5:
+            tree.yview_scroll(1, "units")
+    tree.bind("<MouseWheel>", _on_mousewheel)
+    tree.bind("<Button-4>", _on_mousewheel)
+    tree.bind("<Button-5>", _on_mousewheel)
+    columns = list(df.columns)
+    if has_index:
+        index_name = df.index.name or "Index"
+        columns = [index_name] + columns
+    tree["columns"] = columns
+    for col in columns:
+        tree.heading(col, text=col)
+        tree.column(col, anchor="center", width=100)
+    for idx, row in df.iterrows():
+        values = ['' if pd.isna(val) else str(val) for val in row]
+        if has_index:
+            values = [str(idx)] + values
+        tree.insert("", "end", iid=str(idx) if has_index else f"row_{idx}", values=values)
+    tree.bind("<Double-1>", lambda event: on_tree_double_click(tree, event, has_index))
+    return tree
+
 def display_input_data(emp_path, req_path, limits_path, emp_frame, req_frame, limits_frame, root, notebook, summary_text):
-    """
-    Load CSV files into Treeview widgets for all input tabs (Employee Data, Personnel Required, Hard Limits).
-    """
     global all_input_trees, all_listboxes
     all_input_trees = []
-    def create_treeview(frame, csv_file, has_index=True):
-        for widget in frame.winfo_children():
-            widget.destroy()
-        try:
-            df = pd.read_csv(csv_file, index_col=0 if has_index else None)
-            if "Employee_Data" in os.path.basename(csv_file):
-                first_col = df.columns[0]
-                remaining_cols = sorted(df.columns[1:], key=lambda x: str(x).strip().lower())
-                df = df[[first_col] + remaining_cols]
-        except Exception as e:
-            messagebox.showerror("Error", f"Failed to load {csv_file}: {e}")
-            return None
-        frame.rowconfigure(0, weight=1)
-        frame.columnconfigure(0, weight=1)
-        tree_frame = ttk.Frame(frame)
-        tree_frame.grid(row=0, column=0, sticky="nsew")
-        tree = ttk.Treeview(tree_frame, show="headings", selectmode='none')
-        vsb = ttk.Scrollbar(tree_frame, orient="vertical", command=tree.yview)
-        hsb = ttk.Scrollbar(tree_frame, orient="horizontal", command=tree.xview)
-        tree.configure(yscrollcommand=vsb.set, xscrollcommand=hsb.set)
-        tree.grid(row=0, column=0, sticky="nsew")
-        vsb.grid(row=0, column=1, sticky="ns")
-        hsb.grid(row=1, column=0, sticky="ew")
-        tree_frame.rowconfigure(0, weight=1)
-        tree_frame.columnconfigure(0, weight=1)
-        all_input_trees.append(tree)
-        def _on_mousewheel(event):
-            if event.delta:
-                tree.yview_scroll(int(-1 * (event.delta / 120)), "units")
-            elif event.num == 4:
-                tree.yview_scroll(-1, "units")
-            elif event.num == 5:
-                tree.yview_scroll(1, "units")
-        tree.bind("<MouseWheel>", _on_mousewheel)
-        tree.bind("<Button-4>", _on_mousewheel)
-        tree.bind("<Button-5>", _on_mousewheel)
-        columns = list(df.columns)
-        if has_index:
-            index_name = df.index.name or "Index"
-            columns = [index_name] + columns
-        tree["columns"] = columns
-        for col in columns:
-            tree.heading(col, text=col)
-            tree.column(col, anchor="center", width=100)
-        for idx, row in df.iterrows():
-            values = ['' if pd.isna(val) else str(val) for val in row]
-            if has_index:
-                values = [str(idx)] + values
-            tree.insert("", "end", iid=str(idx) if has_index else f"row_{idx}", values=values)
-        tree.bind("<Double-1>", lambda event: on_tree_double_click(tree, event, has_index))
-        return tree
+    all_listboxes = []
     emp_tree = create_treeview(emp_frame, emp_path, has_index=False)
     if emp_tree:
         def handle_emp_right_click(event):
             region = emp_tree.identify("region", event.x, event.y)
             col = emp_tree.identify_column(event.x)
-
             if region == "heading" and col != "#0":
                 employee_context_menu(emp_tree, event, emp_frame, root)
                 return
-
             if col == "#1":
                 item = emp_tree.identify_row(event.y)
                 if not item:
@@ -175,7 +158,6 @@ def display_input_data(emp_path, req_path, limits_path, emp_frame, req_frame, li
                 row_label = values[0].strip()
                 if not row_label:
                     return
-
                 menu = tk.Menu(emp_tree, tearoff=0)
                 sort_menu = tk.Menu(menu, tearoff=0)
                 menu.add_cascade(label=f"Sort employees by: {row_label}", menu=sort_menu)
@@ -189,12 +171,10 @@ def display_input_data(emp_path, req_path, limits_path, emp_frame, req_frame, li
                 )
                 menu.add_separator()
                 menu.add_command(label="Cancel", command=menu.unpost)
-
                 try:
                     menu.tk_popup(event.x_root, event.y_root)
                 finally:
                     menu.grab_release()
-
         emp_tree.bind("<Button-3>", handle_emp_right_click)
         emp_tree.bind("<Control-Button-1>", handle_emp_right_click)
     create_treeview(req_frame, req_path, has_index=False)
@@ -202,66 +182,60 @@ def display_input_data(emp_path, req_path, limits_path, emp_frame, req_frame, li
     adjust_column_widths(root, all_listboxes, all_input_trees, notebook, summary_text)
 
 def tree_to_df(tree, has_index=True):
-        columns = tree["columns"]
-        data = []
-        index = []
-        for item in tree.get_children():
-            values = [tree.set(item, col) for col in columns]
-            if has_index:
-                index.append(values[0])
-                data.append(values[1:])
-            else:
-                data.append(values)
-        if has_index:
-            return pd.DataFrame(data, index=index, columns=columns[1:])
-        return pd.DataFrame(data, columns=columns)
-   
-    
+    columns = tree["columns"]
+    if not tree.get_children():
+        return pd.DataFrame(columns=columns)
+    data = []
+    for iid in tree.get_children():
+        row_values = tree.item(iid, "values")
+        data.append(list(row_values) if row_values else [""] * len(columns))
+    df = pd.DataFrame(data, columns=columns)
+    if not has_index:
+        pass
+    return df
+
+def _get_save_filename(orig_path, file_type, parent_root=None):
+    if os.environ.get("TEST_DIRECT_SAVE") == "1":
+        print(f"TEST MODE: Saving directly to original path: {orig_path}")
+        return orig_path
+    data_dir = user_data_dir()
+    basename = os.path.basename(orig_path)
+    default_path = os.path.join(data_dir, basename)
+    if os.path.exists(default_path):
+        response = messagebox.askyesnocancel(
+            f"File Exists: {file_type}",
+            f"File already exists:\n{os.path.basename(default_path)}\n\n"
+            f"Yes: Overwrite\n"
+            f"No: Save As\n"
+            f"Cancel: Skip this file",
+            parent=parent_root
+        )
+        if response is None:
+            return False
+        elif response:
+            return default_path
+        else:
+            new_filename = filedialog.asksaveasfilename(
+                parent=parent_root,
+                title=f"Save {file_type} As",
+                initialdir=data_dir,
+                initialfile=basename,
+                defaultextension=".csv",
+                filetypes=[("CSV files", "*.csv"), ("All files", "*.*")]
+            )
+            return new_filename if new_filename else False
+    return default_path
 
 def save_input_data(emp_var, req_var, limits_var, emp_frame, req_frame, limits_frame, root):
-    """
-    Save the edited data from Treeview widgets back to their respective CSV files with overwrite prompt and option to save as a different filename.
-    Update the variables if saved to a new filename.
-    """
     data_dir = user_data_dir()
-
-    def get_save_filename(default_path, file_type):
-        """Get filename with overwrite/skip/save-as options."""
-        if os.path.exists(default_path):
-            response = messagebox.askyesnocancel(
-                f"File Exists: {file_type}",
-                f"File already exists:\n{os.path.basename(default_path)}\n\n"
-                f"Yes: Overwrite\n"
-                f"No: Save As\n"
-                f"Cancel: Skip this file"
-            )
-           
-            if response is None: 
-                return False
-            elif response: 
-                return default_path
-            else: 
-                new_filename = filedialog.asksaveasfilename(
-                    parent=root,
-                    title=f"Save {file_type} As",
-                    initialdir=data_dir,
-                    initialfile=os.path.basename(default_path),
-                    defaultextension=".csv",
-                    filetypes=[("CSV files", "*.csv"), ("All files", "*.*")]
-                )
-                return new_filename if new_filename else False
-        return default_path
-   
     save_messages = []
     try:
-        # Employee Data
-        emp_tree = next((w for w in emp_frame.winfo_children()[0].winfo_children() if isinstance(w, ttk.Treeview)), None)
+        emp_tree = next((w for w in emp_frame.winfo_children()[0].winfo_children() 
+                         if isinstance(w, ttk.Treeview)), None)
         if emp_tree:
             orig_emp_path = emp_var.get()
             if orig_emp_path:
-                emp_basename = os.path.basename(orig_emp_path)
-                emp_path = os.path.join(data_dir, emp_basename)
-                filename = get_save_filename(emp_path, "Employee Data")
+                filename = _get_save_filename(orig_emp_path, "Employee Data", root)
                 if filename and filename is not False:
                     emp_df = tree_to_df(emp_tree, has_index=False)
                     emp_df.to_csv(filename, index=False)
@@ -269,15 +243,12 @@ def save_input_data(emp_var, req_var, limits_var, emp_frame, req_frame, limits_f
                     logging.info(f"Saved Employee Data to {filename}")
                     if filename != orig_emp_path:
                         emp_var.set(filename)
-       
-        # Personnel Required
-        req_tree = next((w for w in req_frame.winfo_children()[0].winfo_children() if isinstance(w, ttk.Treeview)), None)
+        req_tree = next((w for w in req_frame.winfo_children()[0].winfo_children() 
+                         if isinstance(w, ttk.Treeview)), None)
         if req_tree:
             orig_req_path = req_var.get()
             if orig_req_path:
-                req_basename = os.path.basename(orig_req_path)
-                req_path = os.path.join(data_dir, req_basename)
-                filename = get_save_filename(req_path, "Personnel Required")
+                filename = _get_save_filename(orig_req_path, "Personnel Required", root)
                 if filename and filename is not False:
                     req_df = tree_to_df(req_tree, has_index=False)
                     req_df.to_csv(filename, index=False)
@@ -285,15 +256,12 @@ def save_input_data(emp_var, req_var, limits_var, emp_frame, req_frame, limits_f
                     logging.info(f"Saved Personnel Required to {filename}")
                     if filename != orig_req_path:
                         req_var.set(filename)
-       
-        # Hard Limits
-        limits_tree = next((w for w in limits_frame.winfo_children()[0].winfo_children() if isinstance(w, ttk.Treeview)), None)
+        limits_tree = next((w for w in limits_frame.winfo_children()[0].winfo_children() 
+                            if isinstance(w, ttk.Treeview)), None)
         if limits_tree:
             orig_limits_path = limits_var.get()
             if orig_limits_path:
-                limits_basename = os.path.basename(orig_limits_path)
-                limits_path = os.path.join(data_dir, limits_basename)
-                filename = get_save_filename(limits_path, "Hard Limits")
+                filename = _get_save_filename(orig_limits_path, "Hard Limits", root)
                 if filename and filename is not False:
                     limits_df = tree_to_df(limits_tree, has_index=False)
                     limits_df.to_csv(filename, index=False)
@@ -301,7 +269,6 @@ def save_input_data(emp_var, req_var, limits_var, emp_frame, req_frame, limits_f
                     logging.info(f"Saved Hard Limits to {filename}")
                     if filename != orig_limits_path:
                         limits_var.set(filename)
-       
         if save_messages:
             messagebox.showinfo("Success", "\n".join(save_messages))
         else:
@@ -311,26 +278,20 @@ def save_input_data(emp_var, req_var, limits_var, emp_frame, req_frame, limits_f
         messagebox.showerror("Error", f"Failed to save input data: {str(e)}")
 
 def employee_context_menu(tree, event, emp_frame, root):
-    """Right-click on employee header → show menu + PERFECT, SUBTLE HIGHLIGHT"""
     region = tree.identify("region", event.x, event.y)
     if region != "heading":
         return
-
     col = tree.identify_column(event.x)
     if col == "#1":
         return
-
     col_id = tree["columns"][int(col[1:]) - 1]
     employee_name = tree.heading(col_id)["text"]
-
     x = tree.bbox(tree.get_children("")[0] if tree.get_children() else "", col)[0] if tree.get_children() else 0
     if x is None or x == "":
         x = sum(tree.column(c, "width") or 100 for c in tree["columns"][:int(col[1:])-1])
-    
     width = tree.column(col_id, "width") or 100
-    height = 24  # Standard ttk heading height
+    height = 24
     y = 0
-
     canvas = tk.Canvas(tree, highlightthickness=0)
     canvas.place(x=x, y=y, width=width, height=height)
     canvas.create_rectangle(
@@ -345,7 +306,6 @@ def employee_context_menu(tree, event, emp_frame, root):
         fill="black",
         font=("Arial", 10, "bold")
     )
-
     menu = tk.Menu(tree, tearoff=0)
     menu.add_command(
         label=f"Delete Employee: {employee_name}",
@@ -360,7 +320,6 @@ def employee_context_menu(tree, event, emp_frame, root):
         label="Add Employee After",
         command=lambda: add_employee_header(tree, col_id, before=False, root=root, highlight_canvas=canvas)
     )
-
     def cleanup():
         canvas.destroy()
     def on_close(*_):
@@ -369,166 +328,54 @@ def employee_context_menu(tree, event, emp_frame, root):
             menu.unpost()
         except:
             pass
-
     menu.bind("<Unmap>", on_close)
     tree.bind("<Button-1>", on_close, "+")
     tree.bind("<Button-3>", on_close, "+")
     root.bind("<Escape>", on_close, "+")
-
     try:
         menu.tk_popup(event.x_root, event.y_root)
     finally:
         menu.grab_release()
 
-
-def delete_employee(tree, item, name, root):
-    if messagebox.askyesno("Delete Employee", f"Permanently delete employee:\n\n{name}\n\nThis cannot be undone."):
-        tree.delete(item)
-        messagebox.showinfo("Success", f"Employee '{name}' deleted.")
-
-
-def add_employee(tree, item, before=True, root=None):
-    """
-    Add new employee with option to copy settings from existing one
-    """
-    name_win = tk.Toplevel(root)
-    name_win.title("New Employee Name")
-    name_win.geometry("400x120")
-    name_win.transient(root)
-    name_win.grab_set()
-
-    tk.Label(name_win, text="Enter new employee name:", font=("Arial", 10)).pack(pady=10)
-    name_entry = tk.Entry(name_win, width=40, font=("Arial", 10))
-    name_entry.pack(pady=5)
-    name_entry.focus()
-
-    def proceed():
-        new_name = name_entry.get().strip()
-        if not new_name:
-            messagebox.showerror("Error", "Name cannot be empty.")
-            return
-        if new_name in [tree.item(i, "values")[0] for i in tree.get_children()]:
-            messagebox.showerror("Error", f"Employee '{new_name}' already exists.")
-            return
-        name_win.destroy()
-        choose_template(tree, item, new_name, before, root)
-
-    def cancel():
-        name_win.destroy()
-
-    btns = tk.Frame(name_win)
-    btns.pack(pady=10)
-    tk.Button(btns, text="Next", command=proceed).pack(side=tk.LEFT, padx=10)
-    tk.Button(btns, text="Cancel", command=cancel).pack(side=tk.LEFT, padx=10)
-
-    name_win.bind("<Return>", lambda e: proceed())
-    name_win.bind("<Escape>", lambda e: cancel())
-
-
-def choose_template(tree, ref_item, new_name, before, root):
-    """
-    Choose which employee's settings to copy (or blank)
-    """
-    all_employees = [tree.item(i, "values")[0] for i in tree.get_children()]
-    if not all_employees:
-        all_employees = []
-
-    win = tk.Toplevel(root)
-    win.title("Copy Settings From")
-    win.geometry("420x180")
-    win.transient(root)
-    win.grab_set()
-
-    tk.Label(win, text=f"Copy settings for '{new_name}' from:", font=("Arial", 10)).pack(pady=10)
-    tk.Label(win, text="(Leave blank for empty row)", font=("Arial", 9), fg="gray").pack()
-
-    combo = ttk.Combobox(win, values=["(Blank)"] + sorted(all_employees), state="readonly", width=40)
-    combo.set("(Blank)")
-    combo.pack(pady=10)
-
-    def confirm():
-        template_name = combo.get()
-        if template_name == "(Blank)":
-            template_values = [""] * (len(tree["columns"]) - 1)
-        else:
-            for i in tree.get_children():
-                vals = tree.item(i, "values")
-                if vals[0] == template_name:
-                    template_values = list(vals[1:])
-                    break
-
-        new_values = [new_name] + template_values
-        if before:
-            tree.insert("", tree.index(ref_item), values=new_values)
-        else:
-            tree.insert("", tree.index(ref_item) + 1, values=new_values)
-
-        win.destroy()
-        messagebox.showinfo("Success", f"Employee '{new_name}' added.")
-
-    def cancel():
-        win.destroy()
-
-    btns = tk.Frame(win)
-    btns.pack(pady=10)
-    tk.Button(btns, text="Add Employee", command=confirm).pack(side=tk.LEFT, padx=10)
-    tk.Button(btns, text="Cancel", command=cancel).pack(side=tk.LEFT, padx=10)
-
-    win.bind("<Return>", lambda e: confirm())
-    win.bind("<Escape>", lambda e: cancel())
-
 def delete_employee_header(tree, column_id, name, root, highlight_canvas=None):
-    """Delete employee column — now safely removes highlight too"""
     if not messagebox.askyesno("Delete Employee", f"Permanently delete employee:\n\n{name}\n\nThis cannot be undone."):
         if highlight_canvas:
             highlight_canvas.destroy()
         return
-
     current_cols = list(tree["columns"])
     if column_id not in current_cols:
         if highlight_canvas:
             highlight_canvas.destroy()
         return
-
     col_index = current_cols.index(column_id)
     current_cols.pop(col_index)
-    
     heading_texts = {col: tree.heading(col)["text"] for col in tree["columns"]}
-
     tree["columns"] = current_cols
-
     for col in current_cols:
         if col in heading_texts:
             tree.heading(col, text=heading_texts[col])
             tree.column(col, anchor="center", width=100)
-
     for item in tree.get_children():
         values = list(tree.item(item, "values"))
         if len(values) > col_index:
             values.pop(col_index)
             tree.item(item, values=values)
-
     if highlight_canvas:
         highlight_canvas.destroy()
-    
     messagebox.showinfo("Success", f"Employee '{name}' deleted.")
 
-
 def add_employee_header(tree, ref_column_id, before=True, root=None, highlight_canvas=None):
-    """Add new employee column — now preserves highlight during dialog"""
     dialog = tk.Toplevel(root)
     dialog.title("Add New Employee")
     dialog.geometry("480x260")
     dialog.transient(root)
     dialog.grab_set()
     dialog.resizable(False, False)
-
     try:
         from main import resource_path
         dialog.iconbitmap(resource_path(r'icons\teamwork.ico'))
     except:
         pass
-
     dialog.update_idletasks()
     screen_w = dialog.winfo_screenwidth()
     screen_h = dialog.winfo_screenheight()
@@ -537,20 +384,16 @@ def add_employee_header(tree, ref_column_id, before=True, root=None, highlight_c
     pos_x = (screen_w - win_w) // 2
     pos_y = (screen_h - win_h) // 2
     dialog.geometry(f"{win_w}x{win_h}+{pos_x}+{pos_y}")
-
     current_employees = tree["columns"][1:] if tree["columns"] and tree["columns"][0] in ["Employee/Input", ""] else tree["columns"]
-
     tk.Label(dialog, text="New Employee Name:", font=("Arial", 10, "bold")).pack(pady=(15, 5), anchor="w", padx=20)
     name_entry = tk.Entry(dialog, width=40, font=("Arial", 10))
     name_entry.pack(pady=5, padx=20)
     name_entry.focus()
-
     tk.Label(dialog, text="Copy settings from:", font=("Arial", 10)).pack(pady=(15, 5), anchor="w", padx=20)
     template_var = tk.StringVar(value="(Blank - start fresh)")
     combo = ttk.Combobox(dialog, textvariable=template_var, state="readonly", width=38)
     combo["values"] = ["(Blank - start fresh)"] + sorted(current_employees)
     combo.pack(pady=5, padx=20)
-
     def confirm():
         new_name = name_entry.get().strip()
         if not new_name:
@@ -559,45 +402,31 @@ def add_employee_header(tree, ref_column_id, before=True, root=None, highlight_c
         if new_name in current_employees:
             messagebox.showerror("Error", f"Employee '{new_name}' already exists!", parent=dialog)
             return
-
         template_name = template_var.get()
         template_col = None if template_name == "(Blank - start fresh)" else template_name
-
         dialog.destroy()
         if highlight_canvas:
             highlight_canvas.destroy()
         insert_employee_column(tree, ref_column_id, new_name, before, root, template_col)
-
     def cancel():
         dialog.destroy()
         if highlight_canvas:
             highlight_canvas.destroy()
-
     dialog.protocol("WM_DELETE_WINDOW", cancel)
-
     btn_frame = tk.Frame(dialog)
     btn_frame.pack(pady=20)
     tk.Button(btn_frame, text="Add Employee", command=confirm, width=15, bg="#4CAF50", fg="white").pack(side=tk.LEFT, padx=10)
     tk.Button(btn_frame, text="Cancel", command=cancel, width=10).pack(side=tk.LEFT, padx=10)
-
     dialog.bind("<Return>", lambda e: confirm())
     dialog.bind("<Escape>", lambda e: cancel())
 
-
 def insert_employee_column(tree, ref_column_id, new_name, before, root, template_col=None):
-    """Insert new column with optional data copy from template employee"""
     current_cols = list(tree["columns"])
-    
-    heading_texts = {}
-    for col in current_cols:
-        heading_texts[col] = tree.heading(col)["text"]
-
+    heading_texts = {col: tree.heading(col)["text"] for col in current_cols}
     ref_idx = current_cols.index(ref_column_id) if ref_column_id in current_cols else len(current_cols)
     insert_idx = ref_idx if before else ref_idx + 1
-
     current_cols.insert(insert_idx, new_name)
     tree["columns"] = current_cols
-
     for col in current_cols:
         if col == new_name:
             tree.heading(col, text=new_name)
@@ -605,36 +434,24 @@ def insert_employee_column(tree, ref_column_id, new_name, before, root, template
         elif col in heading_texts:
             tree.heading(col, text=heading_texts[col])
             tree.column(col, anchor="center", width=100)
-
     for item in tree.get_children():
         values = list(tree.item(item, "values"))
         if template_col and template_col in tree["columns"]:
-            # Copy data from template column
             template_idx = tree["columns"].index(template_col)
-            if template_idx < len(values):
-                new_value = values[template_idx]
-            else:
-                new_value = ""
+            new_value = values[template_idx] if template_idx < len(values) else ""
         else:
             new_value = ""
         values.insert(insert_idx, new_value)
         tree.item(item, values=values)
-
     messagebox.showinfo("Success", f"Employee '{new_name}' added successfully!")
-    
 
 def on_tree_double_click(tree, event, has_index):
-    """
-    Handle double-click on Treeview to edit cell content.
-    """
     item = tree.identify_row(event.y)
     column = tree.identify_column(event.x)
     if not item or not column:
         return
     col_idx = int(column.replace('#', '')) - 1
     col_name = tree["columns"][col_idx]
-    # Don't allow editing the first column for tables with index (Employee Data, Personnel Required)
-    # Only allow first column editing for Hard Limits (has_index=False)
     if col_idx == 0 and has_index == False:
         return
     current_value = tree.set(item, col_name)
@@ -651,36 +468,35 @@ def on_tree_double_click(tree, event, has_index):
     entry.focus_set()
 
 def edit_schedule_cell(tree, event, area, emp_file_path):
-    """
-    Double-click schedule cell → show white Entry box (like input) → open dialog.
-    """
     item = tree.identify_row(event.y)
     col = tree.identify_column(event.x)
     if not item or not col:
         return
     col_idx = int(col.replace('#', '')) - 1
-    if col_idx == 0:  
+    if col_idx == 0:
         return
-
     cell_value = tree.set(item, col)
     entry = tk.Entry(tree, background='white', foreground='black', relief='solid', bd=1)
     entry.insert(0, cell_value if cell_value else "Click to edit...")
-    entry.config(state='readonly')  
-
+    entry.config(state='readonly')
     x, y, width, height = tree.bbox(item, col)
     entry.place(x=x, y=y, width=width, height=height)
     entry.focus_set()
+    
+    names = [n.strip() for n in cell_value.split(',') if n.strip()]
+    
+    def update_cell():
+        new_value = ', '.join(names)
+        tree.set(item, col, new_value)
+        entry.destroy()
 
     def open_edit_dialog():
         entry.config(state='normal')
         entry.delete(0, tk.END)
         entry.insert(0, cell_value)
         entry.config(state='readonly')
-
         col_name = tree.heading(col)['text']
         shift_name = tree.set(item, tree["columns"][0])
-        names = [n.strip() for n in cell_value.split(',') if n.strip()]
-
         try:
             emp_df = pd.read_csv(emp_file_path, index_col="Employee/Input")
             emp_df = emp_df.transpose()
@@ -693,139 +509,117 @@ def edit_schedule_cell(tree, event, area, emp_file_path):
             messagebox.showerror("Error", f"Load failed: {e}")
             entry.destroy()
             return
-
+        
         dialog = tk.Toplevel()
-        dialog.title(f"Edit - {area}")
-        dialog.geometry("350x450")
-        dialog.transient(tree.winfo_toplevel())
-        dialog.grab_set()
-
-        root_x = tree.winfo_rootx() + x
-        root_y = tree.winfo_rooty() + y
-        screen_w = dialog.winfo_screenwidth()
-        screen_h = dialog.winfo_screenheight()
-        dlg_w, dlg_h = 350, 450
-        pos_x = min(root_x + 20, screen_w - dlg_w)
-        pos_y = min(root_y + 20, screen_h - dlg_h)
-        dialog.geometry(f"{dlg_w}x{dlg_h}+{pos_x}+{pos_y}")
-
+        dialog.withdraw()  # Hide dialog initially to prevent flash
         try:
             from main import resource_path
             dialog.iconbitmap(resource_path(r'icons\teamwork.ico'))
         except:
             pass
+        dialog.title(f"Edit - {area}")
 
+        # Position near the clicked cell
+        cell_x = tree.winfo_rootx() + x
+        cell_y = tree.winfo_rooty() + y
+        dlg_w, dlg_h = 350, 450
+        pos_x = cell_x + width + 10   # right of cell
+        pos_y = cell_y - 50           # above cell
+        # Clamp to screen
+        screen_w = dialog.winfo_screenwidth()
+        screen_h = dialog.winfo_screenheight()
+        if pos_x + dlg_w > screen_w:
+            pos_x = cell_x - dlg_w - 10
+        if pos_y + dlg_h > screen_h:
+            pos_y = cell_y + height + 10
+        if pos_y < 0:
+            pos_y = 0
+        dialog.geometry(f"{dlg_w}x{dlg_h}+{pos_x}+{pos_y}")
+        dialog.transient(tree.winfo_toplevel())
         info = tk.Frame(dialog)
         info.pack(pady=5)
         tk.Label(info, text=f"Shift: {shift_name}", font=("Arial", 10, "bold")).pack()
         tk.Label(info, text=f"Date: {col_name}", font=("Arial", 9)).pack()
         tk.Label(dialog, text="Current Employees:").pack(pady=5)
-
         lb = tk.Listbox(dialog, height=10)
-        for n in names: lb.insert(tk.END, n)
+        for n in names:
+            lb.insert(tk.END, n)
         lb.pack(pady=5, fill="both", expand=True)
-
-        def update_cell():
-            new_val = ", ".join(names)
-            tree.set(item, col, new_val)
-            entry.config(state='normal')
-            entry.delete(0, tk.END)
-            entry.insert(0, new_val if new_val else "")
-            entry.config(state='readonly')
-
-        def add_employee():
-            win = tk.Toplevel(dialog)
-            win.title("Add Employee")
-            win.geometry("300x280")  
-            win.transient(dialog)
-            win.grab_set()
-            win.geometry(f"+{dialog.winfo_x()+50}+{dialog.winfo_y()+50}")
-            try:
-                from main import resource_path
-                win.iconbitmap(resource_path(r'icons\teamwork.ico'))
-            except: pass
-
-            try:
-                full_emp_df = pd.read_csv(emp_file_path, index_col="Employee/Input")
-                full_emp_df = full_emp_df.transpose()
-                all_employees = full_emp_df.index.tolist()
-            except:
-                all_employees = []
-
-            tk.Label(win, text="Select Employee:", font=("Arial", 10, "bold")).pack(pady=(10,5))
-
-            filter_var = tk.BooleanVar(value=True)  
-            def update_combo(*args):
-                show_filtered = filter_var.get()
-                if show_filtered:
-                    current_list = sorted([n for n in available if n not in names])
-                else:
-                    current_list = sorted([n for n in all_employees if n not in names])
-                combo['values'] = current_list
-                if current_list and combo.get() not in current_list:
-                    combo.set('')
-
-            filter_frame = tk.Frame(win)
-            filter_frame.pack(pady=5)
-            chk = tk.Checkbutton(
-                filter_frame,
-                text=f"Only show {area} employees",
-                variable=filter_var,
-                command=update_combo,
-                font=("Arial", 9)
-            )
-            chk.pack()
-
-            combo = ttk.Combobox(win, state="readonly", width=35)
-            combo.pack(pady=8)
-            update_combo() 
-
-            def confirm():
-                name = combo.get()
-                if name and name not in names:
-                    names.append(name)
-                    lb.insert(tk.END, name)
-                    update_cell()
-                    update_combo()
-                elif not name:
-                    messagebox.showwarning("Warning", "Please select an employee.")
-                win.destroy()
-
-            btn_frame = tk.Frame(win)
-            btn_frame.pack(pady=15)
-            tk.Button(btn_frame, text="Add", command=confirm, width=10).pack(side=tk.LEFT, padx=8)
-            tk.Button(btn_frame, text="Cancel", command=win.destroy, width=10).pack(side=tk.LEFT, padx=8)
-
-            win.after(100, lambda: combo.focus())
-
-        def delete_employee():
-            sel = lb.curselection()
-            if sel and messagebox.askyesno("Remove", f"Remove {lb.get(sel[0])}?"):
-                names.pop(sel[0])
-                lb.delete(sel[0])
-                update_cell()
-
         btns = tk.Frame(dialog)
         btns.pack(pady=10)
-        tk.Button(btns, text="Add", command=add_employee).pack(side=tk.LEFT, padx=5)
-        tk.Button(btns, text="Delete", command=delete_employee).pack(side=tk.LEFT, padx=5)
-
-        def close():
-            update_cell()
-            entry.destroy()
-            dialog.destroy()
-
-        tk.Button(btns, text="Close", command=close).pack(side=tk.LEFT, padx=5)
-        dialog.protocol("WM_DELETE_WINDOW", close)
-
+        tk.Button(btns, text="Add", command=lambda: _add_employee_to_cell(names, available, lb, dialog, area, emp_file_path)).pack(side=tk.LEFT, padx=5)
+        tk.Button(btns, text="Delete", command=lambda: _delete_employee_from_cell(names, lb)).pack(side=tk.LEFT, padx=5)
+        tk.Button(btns, text="Close", command=lambda: [update_cell(), dialog.destroy()]).pack(side=tk.LEFT, padx=5)
+        dialog.protocol("WM_DELETE_WINDOW", lambda: [update_cell(), dialog.destroy()])
+        dialog.deiconify()  # Show dialog after all positioning is complete
+        dialog.grab_set()
     tree.after(50, open_edit_dialog)
 
+def _add_employee_to_cell(names, available, lb, parent_dialog, area="", emp_file_path=None):
+    win = tk.Toplevel(parent_dialog)
+    win.title("Add Employee")
+    win.geometry("300x280")
+    win.transient(parent_dialog)
+    win.grab_set()
+    try:
+        from main import resource_path
+        win.iconbitmap(resource_path(r'icons\teamwork.ico'))
+    except:
+        pass
+    px = parent_dialog.winfo_rootx() + 50
+    py = parent_dialog.winfo_rooty() + 50
+    win.geometry(f"+{px}+{py}")
+    tk.Label(win, text="Select Employee:", font=("Arial", 10, "bold")).pack(pady=(10,5))
+    filter_var = tk.BooleanVar(value=True)
+    filter_frame = tk.Frame(win)
+    filter_frame.pack(pady=5)
+    chk = tk.Checkbutton(
+        filter_frame,
+        text=f"Only show {area} employees",
+        variable=filter_var,
+        font=("Arial", 9)
+    )
+    chk.pack()
+    combo = ttk.Combobox(win, state="readonly", width=35)
+    combo.pack(pady=8)
+    try:
+        full_emp_df = pd.read_csv(emp_file_path, index_col="Employee/Input")
+        full_emp_df = full_emp_df.transpose()
+        all_employees = full_emp_df.index.tolist()
+    except:
+        all_employees = []
+    def update_combo(*args):
+        show_filtered = filter_var.get()
+        if show_filtered:
+            current_list = [n for n in available if n not in names]
+        else:
+            current_list = all_employees
+        combo['values'] = sorted(current_list)
+        if current_list and combo.get() not in current_list:
+            combo.set('')
+    update_combo()
+    filter_var.trace("w", update_combo)
+    def confirm():
+        name = combo.get()
+        if name and name not in names:
+            names.append(name)
+            lb.insert(tk.END, name)
+            win.destroy()
+    btn_frame = tk.Frame(win)
+    btn_frame.pack(pady=15)
+    tk.Button(btn_frame, text="Add", command=confirm, width=10).pack(side=tk.LEFT, padx=8)
+    tk.Button(btn_frame, text="Cancel", command=win.destroy, width=10).pack(side=tk.LEFT, padx=8)
+    win.after(100, lambda: combo.focus())
+
+def _delete_employee_from_cell(names, lb):
+    sel = lb.curselection()
+    if sel and messagebox.askyesno("Remove", f"Remove {lb.get(sel[0])}?"):
+        names.pop(sel[0])
+        lb.delete(sel[0])
+        lb.update()
+
 def save_schedule_changes(start_date, root, schedule_container, areas):
-    """
-    Save schedule changes to CSV files with overwrite prompt and option to save as a different filename.
-    """
     def get_save_filename(default_path, file_type):
-        """Get filename with overwrite/skip/save-as options."""
         if os.path.exists(default_path):
             response = messagebox.askyesnocancel(
                 f"File Exists: {file_type}",
@@ -834,12 +628,11 @@ def save_schedule_changes(start_date, root, schedule_container, areas):
                 f"No: Save As\n"
                 f"Cancel: Skip this file"
             )
-            
-            if response is None:  
+            if response is None:
                 return False
-            elif response:  
+            elif response:
                 return default_path
-            else:  
+            else:
                 new_filename = filedialog.asksaveasfilename(
                     parent=root,
                     title=f"Save {file_type} As",
@@ -849,48 +642,21 @@ def save_schedule_changes(start_date, root, schedule_container, areas):
                     filetypes=[("CSV files", "*.csv"), ("All files", "*.*")]
                 )
                 return new_filename if new_filename else False
-                
-                def confirm_save_as():
-                    filename = filename_entry.get().strip()
-                    if not filename:
-                        messagebox.showerror("Error", "Filename cannot be empty.")
-                        return
-                    if not filename.lower().endswith(".csv"):
-                        filename += ".csv"
-                    if not os.path.dirname(filename):
-                        filename = os.path.join(user_output_dir(), filename)
-                    choice[0] = filename
-                    save_dialog.destroy()
-                
-                def cancel_save_as():
-                    choice[0] = False
-                    save_dialog.destroy()
-                
-                button_frame = tk.Frame(save_dialog)
-                button_frame.pack(pady=10)
-                tk.Button(button_frame, text="Save", command=confirm_save_as).pack(side=tk.LEFT, padx=5)
-                tk.Button(button_frame, text="Cancel", command=cancel_save_as).pack(side=tk.LEFT, padx=5)
-                
-                save_dialog.grab_set()
-                root.wait_window(save_dialog)
-                return choice[0]
         return default_path
-
     save_messages = []
     start_date = datetime.datetime.strptime(start_date, "%Y-%m-%d").date() if isinstance(start_date, str) else start_date
     day_names = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
     start_weekday = start_date.weekday()
     actual_days = [day_names[(start_weekday + k) % 7] for k in range(7)]
-    
     try:
         for area in areas:
             area_trees = []
             found_area_label = False
             for widget in schedule_container.winfo_children():
-               if isinstance(widget, tk.Label) and widget.cget("text") == f"{area} Schedule":
+                if isinstance(widget, tk.Label) and widget.cget("text") == f"{area} Schedule":
                     found_area_label = True
                     continue
-               if found_area_label and isinstance(widget, tk.Frame):
+                if found_area_label and isinstance(widget, tk.Frame):
                     for child in widget.winfo_children():
                         if isinstance(child, tk.Frame):
                             for grandchild in child.winfo_children():
@@ -900,15 +666,11 @@ def save_schedule_changes(start_date, root, schedule_container, areas):
                                             area_trees.append(ggchild)
                     found_area_label = False
                     break
-            
             if area_trees:
                 num_weeks = len(area_trees)
-                
                 default_filename = os.path.join(user_output_dir(), f"{area}_schedule_{start_date:%Y-%m-%d}.csv")
-                
                 filename = get_save_filename(default_filename, f"{area} Schedule")
-                
-                if filename and filename is not False:  
+                if filename and filename is not False:
                     try:
                         with open(filename, "w") as f:
                             for week in range(1, num_weeks + 1):
@@ -921,32 +683,25 @@ def save_schedule_changes(start_date, root, schedule_container, areas):
                                     values = [tree.set(item, "Day/Shift")] + [tree.set(item, actual_days[k]) for k in range(7)]
                                     f.write(",".join(f'"{v}"' for v in values) + "\n")
                                 f.write("\n")
-                        
                         save_messages.append(f"Saved {area} schedule to {filename}")
                         logging.info(f"Saved {area} schedule to {filename}")
                     except Exception as e:
                         messagebox.showerror("Error", f"Failed to save {area} schedule: {e}")
                         logging.error(f"Failed to save {area} schedule: {str(e)}")
-        
         if save_messages:
             messagebox.showinfo("Success", "\n".join(save_messages))
         else:
             messagebox.showwarning("Warning", "No schedules were saved.")
-            
     except Exception as e:
         messagebox.showerror("Error", f"Failed to save schedule changes: {str(e)}")
         logging.error(f"Failed to save schedule changes: {str(e)}")
 
 def create_schedule_treeview(parent, week, start_date, shifts, actual_days):
-    """
-    Create a Treeview for a specific week in a schedule frame.
-    """
     week_frame = tk.Frame(parent, name=f"week{week}")
     week_frame.pack(pady=5, fill="both", expand=False)
     week_start = start_date + datetime.timedelta(days=(week-1)*7)
     week_end = week_start + datetime.timedelta(days=6)
     tk.Label(week_frame, text=f"Week {week} ({week_start:%b %d, %Y} - {week_end:%b %d, %Y})").pack()
-
     tree_frame = ttk.Frame(week_frame)
     tree_frame.pack(fill="both", expand=False)
     tree = ttk.Treeview(tree_frame, show="headings", height=len(shifts), selectmode='none')
@@ -958,7 +713,6 @@ def create_schedule_treeview(parent, week, start_date, shifts, actual_days):
     hsb.grid(row=1, column=0, sticky="ew")
     tree_frame.rowconfigure(0, weight=1)
     tree_frame.columnconfigure(0, weight=1)
-
     columns = ["Day/Shift"] + actual_days
     tree["columns"] = columns
     tree.heading("Day/Shift", text="Day/Shift")
@@ -967,10 +721,8 @@ def create_schedule_treeview(parent, week, start_date, shifts, actual_days):
         tree.heading(day, text=f"{day}, {date:%b %d, %y}")
         tree.column(day, anchor="center", width=100)
     tree.column("Day/Shift", anchor="w", width=100)
-
     for shift in shifts:
         tree.insert("", "end", iid=shift, values=[shift] + [""] * len(actual_days))
-
     return tree
 
 def save_area_schedule(treeviews, filename, start_date, num_weeks, actual_days, area):
@@ -989,12 +741,7 @@ def save_area_schedule(treeviews, filename, start_date, num_weeks, actual_days, 
 def generate_schedule(emp_var, req_var, limits_var, start_date_entry, num_weeks_var,
                       summary_text, viz_frame, root, notebook, schedule_container,
                       emp_frame, req_frame, limits_frame):
-    """
-    Generate and display schedules for dynamic work areas, with visualizations.
-    """
     global all_listboxes, schedule_trees
-    
-    # Prompt user to save input data before generating schedule
     response = messagebox.askyesnocancel(
         "Save Input Data",
         "Would you like to save your input data before generating the schedule?\n\n"
@@ -1002,21 +749,19 @@ def generate_schedule(emp_var, req_var, limits_var, start_date_entry, num_weeks_
         "No: Proceed without saving\n"
         "Cancel: Cancel schedule generation"
     )
-    
-    if response is None:  
+    if response is None:
         return
-    elif response:  
+    elif response:
         try:
             save_input_data(emp_var, req_var, limits_var, emp_frame, req_frame, limits_frame, root)
         except Exception as e:
             messagebox.showwarning("Warning", f"Failed to save input data: {e}\n\nProceeding with schedule generation.")
             logging.error(f"Failed to save input data before schedule generation: {e}")
-    
     emp_path = emp_var.get()
     req_path = req_var.get()
     limits_path = limits_var.get()
     all_listboxes = []
-    schedule_trees = {} 
+    schedule_trees = {}
     try:
         start_date = start_date_entry.get_date()
     except tk.TclError:
@@ -1036,16 +781,11 @@ def generate_schedule(emp_var, req_var, limits_var, start_date_entry, num_weeks_
         if result is None:
             return
         employees, _, shifts, areas, shift_prefs, day_prefs, must_off, required, work_areas, constraints, min_shifts, max_shifts, max_weekend_days = result
-        # === SOLVE ===
         prob, x, result_dict = solve_schedule(
             employees, range(7), shifts, areas, shift_prefs, day_prefs, must_off, required, work_areas, constraints,
             min_shifts, max_shifts, max_weekend_days, start_date, num_weeks=num_weeks
         )
-        # -------------------------------------------------
-        # 1. CAPACITY REPORT – ALWAYS available in result_dict
-        # -------------------------------------------------
         capacity_report = result_dict.get("capacity_report", "")
-        # === FAILURE PATH (prob is None) ===
         if prob is None:
             error_msg = result_dict.get("error", "Unknown solver error.")
             messagebox.showerror("No Feasible Schedule", error_msg)
@@ -1081,13 +821,11 @@ def generate_schedule(emp_var, req_var, limits_var, start_date_entry, num_weeks_
                 logging.error(f"Failed to save failure summary: {e}")
             adjust_column_widths(root, all_listboxes, all_input_trees, notebook, summary_text)
             return
-        # === NON-OPTIMAL STATUS ===
         if prob.status != pulp.LpStatusOptimal:
             status_msg = pulp.LpStatus[prob.status]
             messagebox.showerror("Solver Error", f"Failed to find optimal solution: {status_msg}")
             logging.error("Solver status: %s", status_msg)
             return
-        # === SUCCESS PATH  ===
         violations = result_dict.get("violations", [])
         violations_str = "Weekend constraint violations:\n" + ("\n".join(violations) if violations else "None")
         save_messages = []
@@ -1118,7 +856,6 @@ def generate_schedule(emp_var, req_var, limits_var, start_date_entry, num_weeks_
                 save_messages.append(f"Saved {area} schedule to {filename}")
             except Exception as e:
                 messagebox.showerror("Error", f"Failed to save {area} schedule: {e}")
-        # === Summary Report (UI) ===
         min_emps, min_str, violations = min_employees_to_avoid_weekend_violations(
             max_weekend_days, areas, violations, work_areas, employees,
             start_date=start_date, num_weeks=num_weeks, result_dict=result_dict
@@ -1129,11 +866,9 @@ def generate_schedule(emp_var, req_var, limits_var, start_date_entry, num_weeks_
             summary_text.insert(tk.END, capacity_report + "\n\n")
         summary_text.insert(tk.END, violations_str + "\n\n")
         summary_text.insert(tk.END, min_str + "\n\n")
-        # Employee shift summary
         summary_text.insert(tk.END, "Employee Shift Summary:\n")
         summary_text.insert(tk.END, f"{'Employee':<20} {'Total':<8} {'Weeks':<20}\n")
         summary_text.insert(tk.END, "-" * 48 + "\n")
-        # Build employee shift counts
         summary_df = pd.DataFrame(index=employees, columns=["Employee", "Total Shifts"] + [f"Week {i+1}" for i in range(num_weeks)])
         summary_df["Employee"] = employees
         shift_counts = {e: {w: 0 for w in range(num_weeks)} for e in employees}
@@ -1154,7 +889,6 @@ def generate_schedule(emp_var, req_var, limits_var, start_date_entry, num_weeks_
             weeks = ", ".join(str(int(summary_df.loc[e, f"Week {i+1}"])) for i in range(num_weeks))
             summary_text.insert(tk.END, f"{e:<20} {int(total):<8} {weeks}\n")
         summary_text.insert(tk.END, f"\n{'Overall Total Shifts':<20} {total_shifts}\n")
-        # === Save Summary Report to file ===
         summary_file = os.path.join(user_output_dir(), f"Summary_report_{start_date:%Y-%m-%d}.txt")
         try:
             file_lines = []
@@ -1177,7 +911,6 @@ def generate_schedule(emp_var, req_var, limits_var, start_date_entry, num_weeks_
             save_messages.append(f"Saved summary to {summary_file}")
         except Exception as e:
             messagebox.showerror("Error", f"Failed to save summary: {e}")
-        # === Visualizations ===
         try:
             for child in viz_frame.winfo_children():
                 child.destroy()
@@ -1185,7 +918,6 @@ def generate_schedule(emp_var, req_var, limits_var, start_date_entry, num_weeks_
             fig, axs = plt.subplots(2, 2, figsize=(max(10, len(active)*0.5)+5, 10),
                                   gridspec_kw={'width_ratios': [3, 1], 'height_ratios': [1, 1]})
             colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728']
-            # Plot 1
             week_data = {f'Week {i+1}': [int(summary_df.loc[e, f'Week {i+1}']) for e in active] for i in range(num_weeks)}
             bottom = np.zeros(len(active))
             for i, (week, data) in enumerate(week_data.items()):
@@ -1194,10 +926,8 @@ def generate_schedule(emp_var, req_var, limits_var, start_date_entry, num_weeks_
             axs[0,0].set_title('Shifts per Employee (by Week)')
             axs[0,0].legend()
             axs[0,0].tick_params(axis='x', rotation=45, labelsize=8)
-            # Plot 2
             axs[0,1].bar(week_data.keys(), [sum(d) for d in week_data.values()], color=colors[:num_weeks])
             axs[0,1].set_title('Total Shifts per Week')
-            # Plot 3
             area_counts = {a: [0]*len(active) for a in areas}
             for i, e in enumerate(active):
                 for area in areas:
@@ -1209,7 +939,6 @@ def generate_schedule(emp_var, req_var, limits_var, start_date_entry, num_weeks_
             axs[1,0].set_title('Shifts per Employee (by Area)')
             axs[1,0].legend()
             axs[1,0].tick_params(axis='x', rotation=45, labelsize=8)
-            # Plot 4
             axs[1,1].bar(areas, [sum(d) for d in area_counts.values()], color=colors[:len(areas)])
             axs[1,1].set_title('Total Shifts per Area')
             plt.tight_layout()
